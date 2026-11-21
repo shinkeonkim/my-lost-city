@@ -316,6 +316,10 @@ input:focus {
     grid-template-columns: 1fr 1fr;
     align-items: start;
   }
+  .lobby-grid {
+    /* 오른쪽 설정 패널이 두 줄을 차지해도 왼쪽 첫 줄(초대)이 늘어나지 않게 */
+    grid-template-rows: auto 1fr;
+  }
   .lobby-grid > .panel {
     grid-column: 1;
   }
