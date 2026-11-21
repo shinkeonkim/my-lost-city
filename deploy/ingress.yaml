@@ -1,0 +1,18 @@
+# 내부(tailnet) 확인용. 공개는 Cloudflare Tunnel Public Hostname → http://my-lost-city.my-lost-city.svc.cluster.local:80
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-lost-city
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: my-lost-city.homelab.shinkeonkim.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: my-lost-city
+                port:
+                  name: http
