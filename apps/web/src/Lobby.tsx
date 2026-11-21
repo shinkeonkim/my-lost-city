@@ -36,10 +36,18 @@ export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeav
           <span className="muted small">방 코드</span>
           <div className="code big">{view.code}</div>
         </div>
-        <button className="btn ghost" onClick={onLeave}>
-          나가기
-        </button>
+        <div className="row tight">
+          {isHost && <CloseRoomButton act={act} />}
+          <button className="btn ghost" onClick={onLeave}>
+            나가기
+          </button>
+        </div>
       </header>
+      {view.lobby.inResults.length > 0 && (
+        <div className="notice">
+          🏁 지난 게임이 끝났어요. <b>{view.lobby.inResults.join(', ')}</b> 님이 아직 결과를 보고 있어요 — 로비로 돌아오면 함께 시작할 수 있어요.
+        </div>
+      )}
 
       <div className="lobby-grid">
         <ShareBox view={view} isHost={isHost} act={act} />
@@ -58,6 +66,8 @@ export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeav
                   {m.id === view.you && <span className="tag mine">나</span>}
                   {view.config.teams && players.length === 4 && <span className="tag">{i % 2 === 0 ? 'A팀' : 'B팀'}</span>}
                   {!m.connected && <span className="tag">끊김</span>}
+                  {m.connected && m.inResults && <span className="tag results">결과 보는 중</span>}
+                  {m.connected && !m.inResults && view.lobby.inResults.length > 0 && <span className="tag ready">대기 중</span>}
                 </span>
                 {isHost && (
                   <span className="mini-actions">
@@ -104,14 +114,48 @@ export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeav
           {view.lobby.errors[0] && <div className="warn">{view.lobby.errors[0]}</div>}
         </div>
         {isHost ? (
-          <button className="btn primary" disabled={view.lobby.errors.length > 0} onClick={() => act('start')}>
-            게임 시작
-          </button>
+          view.lobby.inResults.length > 0 ? (
+            <div className="row tight">
+              <span className="muted small">{view.lobby.inResults.length}명 기다리는 중</span>
+              <button className="btn" disabled={view.lobby.errors.length > 0} onClick={() => act('start', { force: true })}>
+                기다리지 않고 시작
+              </button>
+            </div>
+          ) : (
+            <button className="btn primary" disabled={view.lobby.errors.length > 0} onClick={() => act('start')}>
+              게임 시작
+            </button>
+          )
         ) : (
           <span className="muted small">방장이 시작하길 기다리는 중</span>
         )}
       </div>
     </main>
+  );
+}
+
+/** 방장 전용: 두 번 눌러 확인하는 방 닫기 (브라우저 confirm 대화상자 대신 인라인 확인) */
+export function CloseRoomButton({ act, small }: { act: Act; small?: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+  return confirming ? (
+    <span className="confirm-close">
+      <span className="small">모두 나가게 돼요</span>
+      <button className={`btn danger ${small ? 'tiny' : ''}`} onClick={() => act('close')}>
+        방 닫기
+      </button>
+      <button className={`btn ghost ${small ? 'tiny' : ''}`} onClick={() => setConfirming(false)}>
+        취소
+      </button>
+    </span>
+  ) : (
+    <button className={`btn ghost ${small ? 'tiny' : ''}`} onClick={() => setConfirming(true)}>
+      방 닫기
+    </button>
   );
 }
 

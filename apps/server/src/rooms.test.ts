@@ -79,8 +79,38 @@ describe('Rooms', () => {
     const v = rooms.view(room, bySeat[1]);
     expect(v.game!.me).toBe(1);
     expect(v.game!.hand).toEqual(room.match!.state.hands[1]);
+    // 각자 로비로: 먼저 돌아온 사람은 대기 로비, 나머지는 아직 결과 화면
     rooms.next(room, host);
+    expect(room.match).not.toBeNull();
+    expect(rooms.view(room, host).game).toBeNull();
+    expect(rooms.view(room, bySeat[1]).game?.status).toBe('match-over');
+    expect(rooms.view(room, host).lobby.inResults.length).toBe(2);
+    // 방장은 기다리지 않으면 시작 불가, force면 가능
+    expect(() => rooms.start(room, host)).toThrow(/결과를 보고/);
+    rooms.back(room, bySeat[1]);
+    rooms.back(room, bySeat[2]);
     expect(room.match).toBeNull();
+  });
+
+  it('결과 보는 사람을 기다리지 않고 새 게임 시작 (force)', () => {
+    const { rooms, room, host, others } = lobby(2);
+    rooms.setConfig(room, host, { rounds: 1 });
+    rooms.start(room, host);
+    const bySeat = [host, others[0]].sort((a, b) => a.seat! - b.seat!);
+    while (room.match!.status === 'playing') rooms.move(room, bySeat[room.match!.state.turn], autoMove(room.match!));
+    rooms.back(room, host);
+    rooms.setConfig(room, host, { colors: 4 }); // 대기 로비에서 설정 변경 가능
+    rooms.start(room, host, true);
+    expect(room.match!.status).toBe('playing');
+    expect(room.match!.config.colors).toBe(4);
+    expect(rooms.view(room, others[0]).game?.status).toBe('playing');
+  });
+
+  it('방장만 방을 닫을 수 있고, 닫으면 해제', () => {
+    const { rooms, room, host, others } = lobby(2);
+    expect(() => rooms.close(room, others[0])).toThrow(/방장/);
+    rooms.close(room, host);
+    expect(rooms.rooms.has(room.code)).toBe(false);
   });
 
   it('남의 차례에 두면 거부, 관전자는 못 둠', () => {

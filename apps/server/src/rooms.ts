@@ -38,6 +38,8 @@ export interface Member {
   seat: number | null;
   connections: number;
   disconnectedAt: number | null;
+  /** 게임이 끝난 뒤 결과 화면에서 로비로 돌아왔는지 */
+  backInLobby: boolean;
 }
 
 export interface Room {
@@ -54,6 +56,16 @@ export interface Room {
 }
 
 export class RoomError extends Error {}
+
+/** 로비 조작(설정·인원·시작)이 가능한 상태: 게임이 없거나 매치가 끝난 뒤 */
+function lobbyOpen(room: Room): boolean {
+  return !room.match || room.match.status === 'match-over';
+}
+
+/** 매치가 끝났는데 아직 결과 화면에 남아 있는 사람 */
+function inResults(room: Room, m: Member): boolean {
+  return room.match?.status === 'match-over' && !m.backInLobby;
+}
 
 type Listener = (room: Room) => void;
 
@@ -119,8 +131,9 @@ export class Rooms {
       }
     }
     const playerCount = room.members.filter((m) => m.role === 'player').length;
-    const asPlayer = !opts.spectator && !room.match && playerCount < MAX_PLAYERS;
+    const asPlayer = !opts.spectator && lobbyOpen(room) && playerCount < MAX_PLAYERS;
     const member = makeMember(uniqueName(room, opts.name), asPlayer ? 'player' : 'spectator');
+    member.backInLobby = true; // 끝난 매치 결과를 볼 필요 없이 바로 대기 로비로
     room.members.push(member);
     this.touch(room);
     return { room, member };
@@ -154,14 +167,14 @@ export class Rooms {
 
   kick(room: Room, by: Member, targetId: string) {
     this.requireHost(room, by);
-    if (room.match) throw new RoomError('게임 중에는 내보낼 수 없습니다');
+    if (!lobbyOpen(room)) throw new RoomError('게임 중에는 내보낼 수 없습니다');
     if (targetId === by.id) throw new RoomError('자기 자신은 내보낼 수 없습니다');
     room.members = room.members.filter((m) => m.id !== targetId);
     this.touch(room);
   }
 
   setRole(room: Room, member: Member, role: Member['role']) {
-    if (room.match) throw new RoomError('게임 중에는 바꿀 수 없습니다');
+    if (!lobbyOpen(room)) throw new RoomError('게임 중에는 바꿀 수 없습니다');
     if (role === 'player' && member.role !== 'player') {
       if (room.members.filter((m) => m.role === 'player').length >= MAX_PLAYERS) throw new RoomError(`플레이어는 최대 ${MAX_PLAYERS}명입니다`);
     }
@@ -172,7 +185,7 @@ export class Rooms {
   /** 로비에서 플레이어 순서 이동 */
   moveMember(room: Room, by: Member, targetId: string, dir: -1 | 1) {
     this.requireHost(room, by);
-    if (room.match) throw new RoomError('게임 중에는 바꿀 수 없습니다');
+    if (!lobbyOpen(room)) throw new RoomError('게임 중에는 바꿀 수 없습니다');
     const i = room.members.findIndex((m) => m.id === targetId);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= room.members.length) return;
@@ -182,7 +195,7 @@ export class Rooms {
 
   setConfig(room: Room, by: Member, input: Partial<GameConfig>) {
     this.requireHost(room, by);
-    if (room.match) throw new RoomError('게임 중에는 설정을 바꿀 수 없습니다');
+    if (!lobbyOpen(room)) throw new RoomError('게임 중에는 설정을 바꿀 수 없습니다');
     room.config = sanitizeConfig({ ...room.config, ...input });
     this.touch(room);
   }
@@ -193,10 +206,14 @@ export class Rooms {
     this.touch(room);
   }
 
-  start(room: Room, by: Member) {
+  /** force: 아직 결과 화면에 있는 사람을 기다리지 않고 시작 */
+  start(room: Room, by: Member, force = false) {
     this.requireHost(room, by);
-    if (room.match && room.match.status !== 'match-over') throw new RoomError('이미 게임 중입니다');
+    if (!lobbyOpen(room)) throw new RoomError('이미 게임 중입니다');
     const players = room.members.filter((m) => m.role === 'player');
+    const waiting = players.filter((m) => m.connections > 0 && inResults(room, m) && m !== by);
+    if (waiting.length && !force) throw new RoomError(`${waiting.map((m) => m.name).join(', ')} 님이 아직 결과를 보고 있어요`);
+    room.members.forEach((m) => (m.backInLobby = false));
     const errors = validateConfig(room.config, players.length);
     if (errors.length) throw new RoomError(errors[0]);
     room.members.forEach((m) => (m.seat = null));
@@ -237,13 +254,34 @@ export class Rooms {
       startNextRound(match, rng);
       this.resetTimer(room);
     } else if (match.status === 'match-over') {
-      room.match = null;
-      room.members.forEach((m) => (m.seat = null));
-      this.clearTimer(room);
+      this.back(room, by);
+      return;
     } else {
       throw new RoomError('판이 아직 끝나지 않았습니다');
     }
     this.touch(room);
+  }
+
+  /** 매치가 끝난 뒤 각자 결과 화면에서 대기 로비로 돌아간다. 모두 돌아오면 끝난 매치를 정리 */
+  back(room: Room, member: Member) {
+    if (room.match?.status !== 'match-over') return;
+    member.backInLobby = true;
+    const stillViewing = room.members.some((m) => m.connections > 0 && inResults(room, m));
+    if (!stillViewing) {
+      room.match = null;
+      room.members.forEach((m) => {
+        m.seat = null;
+        m.backInLobby = false;
+      });
+      this.clearTimer(room);
+    }
+    this.touch(room);
+  }
+
+  /** 방장이 방을 닫는다 — 모두 내보내고 방 해제 */
+  close(room: Room, by: Member) {
+    this.requireHost(room, by);
+    this.remove(room);
   }
 
   /** 끊긴 플레이어의 차례를 다른 플레이어가 대신 진행 (자동 버리기 + 덱에서 뽑기) */
@@ -344,6 +382,7 @@ export class Rooms {
         role: m.role,
         seat: m.seat,
         connected: m.connections > 0,
+        inResults: inResults(room, m),
         awayMs: m.connections > 0 || m.disconnectedAt === null ? null : Date.now() - m.disconnectedAt,
         isHost: m.id === room.hostId,
       })),
@@ -352,9 +391,11 @@ export class Rooms {
         playerCount: players.length,
         deckSize: deckSize(room.config),
         expectedTurns: Math.round(expectedTurns(room.config, Math.max(players.length, 2)) * 10) / 10,
+        inResults: room.members.filter((m) => m.role === 'player' && m.connections > 0 && inResults(room, m)).map((m) => m.name),
         errors: validateConfig(room.config, Math.max(players.length, 2)).concat(players.length < 2 ? ['플레이어가 2명 이상 필요합니다'] : []),
       },
-      game: room.match ? viewFor(room.match, member.seat ?? -1) : null,
+      // 매치가 끝난 뒤 로비로 돌아온 사람에게는 게임 대신 대기 로비를 보여준다
+      game: room.match && !(room.match.status === 'match-over' && member.backInLobby) ? viewFor(room.match, member.seat ?? -1) : null,
       seats,
       turnRemainingMs: room.turnDeadline ? Math.max(0, room.turnDeadline - Date.now()) : null,
       nudgeInMs: this.nudgeInMs(room),
@@ -371,6 +412,7 @@ function makeMember(name: string, role: Member['role']): Member {
     seat: null,
     connections: 0,
     disconnectedAt: null,
+    backInLobby: false,
   };
 }
 

@@ -8,6 +8,8 @@ export interface MemberPublic {
   role: 'player' | 'spectator';
   seat: number | null;
   connected: boolean;
+  /** 끝난 매치의 결과 화면을 아직 보고 있음 */
+  inResults: boolean;
   /** 연결이 끊긴 지 몇 ms 지났는지 (접속 중이면 null) */
   awayMs: number | null;
   isHost: boolean;
@@ -20,7 +22,14 @@ export interface RoomView {
   hostId: string;
   members: MemberPublic[];
   config: GameConfig;
-  lobby: { playerCount: number; deckSize: number; expectedTurns: number; errors: string[] };
+  lobby: {
+    playerCount: number;
+    deckSize: number;
+    expectedTurns: number;
+    errors: string[];
+    /** 아직 결과 화면에 있는 플레이어 이름 (방장이 기다리지 않고 시작 가능) */
+    inResults: string[];
+  };
   game: GameView | null;
   /** seat → 이름 */
   seats: string[];

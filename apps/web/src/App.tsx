@@ -198,9 +198,9 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
   // 서버 이벤트
   useEffect(() => {
     const onRoom = (v: RoomView) => setView(v);
-    const onKicked = () => {
+    const onKicked = (reason?: string) => {
       store.setToken(code, null);
-      onExit('방에서 나갔습니다');
+      onExit(typeof reason === 'string' ? reason : '방에서 나갔습니다');
     };
     const onErr = (m: string) => setToast(m);
     const onReconnect = async () => {

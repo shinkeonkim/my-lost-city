@@ -75,7 +75,7 @@ function broadcast(room: Room) {
   io.in(`r:${room.code}`).fetchSockets().then((sockets) => {
     for (const s of sockets) {
       if (!room.members.some((m) => m.id === s.data.memberId) || !rooms.rooms.has(room.code)) {
-        s.emit('kicked');
+        s.emit('kicked', rooms.rooms.has(room.code) ? '방장이 방에서 내보냈어요' : '방이 닫혔어요');
         s.leave(`r:${room.code}`);
         s.data.code = undefined;
       }
@@ -189,7 +189,7 @@ io.on('connection', (socket) => {
         const { room, member } = current(socket);
         fn(room, member, p);
         if (rooms.rooms.has(room.code)) broadcast(room);
-        else io.in(`r:${room.code}`).emit('kicked');
+        else io.in(`r:${room.code}`).emit('kicked', '방장이 방을 닫았어요');
       }),
     );
 
@@ -198,7 +198,9 @@ io.on('connection', (socket) => {
   act<{ role: 'player' | 'spectator' }>('role', (r, m, p) => rooms.setRole(r, m, p.role === 'spectator' ? 'spectator' : 'player'));
   act<{ id: string; dir: -1 | 1 }>('reorder', (r, m, p) => rooms.moveMember(r, m, String(p.id), p.dir === -1 ? -1 : 1));
   act<{ id: string }>('kick', (r, m, p) => rooms.kick(r, m, String(p.id)));
-  act('start', (r, m) => rooms.start(r, m));
+  act<{ force?: boolean }>('start', (r, m, p) => rooms.start(r, m, p.force === true));
+  act('back', (r, m) => rooms.back(r, m));
+  act('close', (r, m) => rooms.close(r, m));
   act<{ move: any }>('move', (r, m, p) => rooms.move(r, m, p.move));
   act<{ round?: number; status?: string }>('next', (r, m, p) =>
     rooms.next(r, m, { round: typeof p.round === 'number' ? p.round : undefined, status: typeof p.status === 'string' ? p.status : undefined }),

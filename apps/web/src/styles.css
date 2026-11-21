@@ -1278,3 +1278,56 @@ button.card:focus-visible {
 .pile.open .in-pile {
   transform: translateY(calc(var(--depth) * -1 * min(19px, 240px / var(--n))));
 }
+
+/* ---------- 방 닫기 / 대기 로비 ---------- */
+.row.tight {
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+.topbar .right {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.confirm-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: status-in 0.2s ease-out;
+}
+.confirm-close .small {
+  color: var(--danger);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.notice {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+.tag.results {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  border-color: var(--accent);
+}
+.tag.ready {
+  background: color-mix(in srgb, var(--ok) 18%, var(--panel));
+  border-color: var(--ok);
+}
+@media (max-width: 520px) {
+  .start-bar {
+    flex-wrap: wrap;
+  }
+  .start-bar > .row.tight {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

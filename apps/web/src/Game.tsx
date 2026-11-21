@@ -3,6 +3,7 @@ import { Card, GameView, LogEntry, RoomView, canPlayOnExpedition, playBlockReaso
 import { Glyph, SUITS, cardLabel, suitVars } from './theme';
 import { CardBack, CardFace } from './cards';
 import { hasOrigin, setOrigin } from './flip';
+import { CloseRoomButton } from './Lobby';
 
 type Act = (event: string, payload?: object) => Promise<boolean>;
 
@@ -231,6 +232,7 @@ export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act;
           <span className="muted"> · {view.code}</span>
         </div>
         <div className="small right">
+          {view.hostId === view.you && <CloseRoomButton act={act} small />}
           <button className="btn ghost tiny" onClick={() => setShowLog((v) => !v)}>
             기록
           </button>
@@ -696,7 +698,7 @@ function RoundOver({ view, act, onLeave, onPeek }: { view: RoomView; act: Act; o
           </p>
         )}
         <div className="row">
-          <button className="btn primary grow" onClick={() => act('next', { round: g.round, status: g.status })}>
+          <button className="btn primary grow" onClick={() => (matchOver ? act('back') : act('next', { round: g.round, status: g.status }))}>
             {matchOver ? '로비로 돌아가기' : '다음 판 시작'}
           </button>
           <button className="btn" onClick={onPeek}>
