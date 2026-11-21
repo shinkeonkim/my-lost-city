@@ -45,7 +45,7 @@ function useMotionOrigins(g: GameView, refs: { deck: React.RefObject<HTMLElement
     for (const e of g.log) {
       if (e.n <= prev.n || e.player === g.me) continue;
       const board = refs.boards.get(e.player);
-      if (e.card && (e.move.type === 'play' || e.move.type === 'discard')) setOrigin(e.card.id, board?.querySelector('.board-head'));
+      if (e.card && (e.move.type === 'play' || e.move.type === 'discard')) setOrigin(e.card.id, board?.querySelector('.mini-hand') ?? board?.querySelector('.board-head'));
     }
     // 덱에서 뽑은 카드: 덱에서 뒤집히며 손으로 들어옴
     for (const c of g.hand) if (!prev.hand.has(c.id) && !hasOrigin(c.id) && refs.deck.current) setOrigin(c.id, refs.deck.current, { flip: true });

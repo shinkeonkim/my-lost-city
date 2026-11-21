@@ -34,7 +34,8 @@ export function useFlyIn(cardId: string, ref: RefObject<HTMLElement>) {
     if (to.width === 0) return;
     const dx = o.rect.left + o.rect.width / 2 - (to.left + to.width / 2);
     const dy = o.rect.top + o.rect.height / 2 - (to.top + to.height / 2);
-    const s = o.rect.width / to.width || 1;
+    // 출발 요소가 카드보다 훨씬 크거나 작아도(예: 이름 줄) 카드가 거대하게 보이지 않도록 제한
+    const s = Math.min(1.6, Math.max(0.5, o.rect.width / to.width || 1));
     const start = `translate(${dx}px, ${dy}px) scale(${s})${o.flip ? ' rotateY(90deg)' : ''}`;
     el.style.zIndex = '30';
     const anim = el.animate(
