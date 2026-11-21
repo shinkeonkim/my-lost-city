@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { RoomView } from '@el/engine';
+import type { EmoteEvent, RoomView } from '@el/engine';
 import { call, socket } from './socket';
 import { store } from './storage';
 import { Lobby } from './Lobby';
@@ -149,6 +149,7 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
   const [view, setView] = useState<RoomView | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [connected, setConnected] = useState(socket.connected);
+  const [emotes, setEmotes] = useState<EmoteEvent[]>([]);
 
   useEffect(() => {
     const up = () => setConnected(true);
@@ -212,11 +213,18 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
         onExit(`${err} — 서버가 재시작되어 방이 닫혔을 수 있어요`);
       }
     };
+    const onEmote = (e: EmoteEvent) => {
+      // 같은 사람의 이전 말풍선은 새 것으로 교체, 3초 뒤 사라짐
+      setEmotes((list) => [...list.filter((x) => x.from !== e.from), e]);
+      setTimeout(() => setEmotes((list) => list.filter((x) => x.n !== e.n)), 3000);
+    };
+    socket.on('emote', onEmote);
     socket.on('room', onRoom);
     socket.on('kicked', onKicked);
     socket.on('error-message', onErr);
     socket.io.on('reconnect', onReconnect);
     return () => {
+      socket.off('emote', onEmote);
       socket.off('room', onRoom);
       socket.off('kicked', onKicked);
       socket.off('error-message', onErr);
@@ -249,7 +257,11 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
 
   return (
     <>
-      {view.game ? <Game view={view} act={act} onLeave={leave} notify={setToast} /> : <Lobby view={view} act={act} onLeave={leave} />}
+      {view.game ? (
+        <Game view={view} act={act} onLeave={leave} notify={setToast} emotes={emotes} onEmote={(id) => act('emote', { id })} />
+      ) : (
+        <Lobby view={view} act={act} onLeave={leave} emotes={emotes} onEmote={(id) => act('emote', { id })} />
+      )}
       {toast && <div className="toast" role="status">{toast}</div>}
       {!connected && <div className="offline">연결이 끊겼습니다 — 다시 연결하는 중…</div>}
     </>

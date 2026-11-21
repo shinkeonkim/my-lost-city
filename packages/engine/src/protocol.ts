@@ -38,3 +38,36 @@ export interface RoomView {
   /** 현재 차례인 사람이 끊겨서 다른 사람이 대신 진행할 수 있기까지 남은 ms (해당 없으면 null) */
   nudgeInMs: number | null;
 }
+
+/** 방 안에서 보낼 수 있는 감정 표현 (서버는 이 목록의 id만 허용) */
+export const EMOTES = [
+  { id: 'thumbs', text: '👍' },
+  { id: 'clap', text: '👏' },
+  { id: 'lol', text: '😂' },
+  { id: 'wow', text: '😮' },
+  { id: 'scream', text: '😱' },
+  { id: 'think', text: '🤔' },
+  { id: 'cry', text: '😭' },
+  { id: 'fire', text: '🔥' },
+  { id: 'cool', text: '😎' },
+  { id: 'pray', text: '🙏' },
+  { id: 'nice', text: '좋은 수!' },
+  { id: 'close', text: '아깝다~' },
+  { id: 'hurry', text: '빨리요~ ⏳' },
+  { id: 'hmm', text: '고민되네…' },
+  { id: 'please', text: '잘 부탁해요!' },
+  { id: 'gg', text: 'GG 👋' },
+] as const;
+
+export type EmoteId = (typeof EMOTES)[number]['id'];
+
+export interface EmoteEvent {
+  /** 보낸 멤버 id */
+  from: string;
+  name: string;
+  /** 게임 좌석 (관전자/로비면 null) */
+  seat: number | null;
+  id: EmoteId;
+  /** 클라이언트에서 같은 이모트를 구분하기 위한 일련번호 */
+  n: number;
+}

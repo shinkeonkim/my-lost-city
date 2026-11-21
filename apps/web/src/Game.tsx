@@ -1,9 +1,11 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, GameView, LogEntry, RoomView, canPlayOnExpedition, playBlockReason, scoreColumn, scorePlayer, teamOf } from '@el/engine';
+import { Card, EmoteEvent, GameView, LogEntry, RoomView, canPlayOnExpedition, playBlockReason, scoreColumn, scorePlayer, teamOf } from '@el/engine';
 import { Glyph, SUITS, cardLabel, suitVars } from './theme';
 import { CardBack, CardFace } from './cards';
 import { hasOrigin, setOrigin } from './flip';
 import { CloseRoomButton } from './Lobby';
+import { EmoteBubble, EmoteButton, EmoteFeed } from './emotes';
+import { sound } from './sound';
 
 type Act = (event: string, payload?: object) => Promise<boolean>;
 
@@ -53,7 +55,21 @@ function useMotionOrigins(g: GameView, refs: { deck: React.RefObject<HTMLElement
   });
 }
 
-export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act; onLeave: () => void; notify: (msg: string) => void }) {
+export function Game({
+  view,
+  act,
+  onLeave,
+  notify,
+  emotes,
+  onEmote,
+}: {
+  view: RoomView;
+  act: Act;
+  onLeave: () => void;
+  notify: (msg: string) => void;
+  emotes: EmoteEvent[];
+  onEmote: (id: string) => void;
+}) {
   const g = view.game!;
   const c = g.config;
   const range: [number, number] = [c.minValue, c.maxValue];
@@ -95,6 +111,35 @@ export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act;
       document.title = 'Expedition Lines';
     };
   }, [myTurn]);
+
+  // 턴이 바뀔 때 화면 가운데 스플래시 + 알림음
+  const [splash, setSplash] = useState<{ text: string; sub: string; mine: boolean; k: number } | null>(null);
+  const turnKey = `${g.round}-${g.turn}-${g.status}`;
+  const firstTurnKey = useRef(turnKey);
+  useEffect(() => {
+    if (turnKey === firstTurnKey.current || g.status !== 'playing') return;
+    const mine = g.turn === me;
+    setSplash({
+      text: mine ? '내 차례!' : `${turnName} 님 차례`,
+      sub: mine ? '카드를 1장 내려놓고, 1장 가져오세요' : (g.turn + 1) % g.players === me ? '다음은 내 차례예요' : '',
+      mine,
+      k: Date.now(),
+    });
+    sound.play(mine ? 'myTurn' : 'turn');
+    const t = setTimeout(() => setSplash(null), mine ? 1500 : 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnKey]);
+  const [muted, setMuted] = useState(sound.muted);
+  useEffect(() => {
+    const off = sound.subscribe(setMuted);
+    return () => {
+      off();
+    };
+  }, []);
+  const emoteBySeat = new Map<number, EmoteEvent>();
+  for (const e of emotes) if (e.seat !== null) emoteBySeat.set(e.seat, e);
+  const seatless = emotes.filter((e) => e.seat === null);
 
   const deckRef = useRef<HTMLDivElement>(null);
   const boards = useRef(new Map<number, HTMLElement>()).current;
@@ -232,6 +277,10 @@ export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act;
           <span className="muted"> · {view.code}</span>
         </div>
         <div className="small right">
+          <EmoteButton onSend={onEmote} small />
+          <button className="btn ghost tiny" aria-label={muted ? '소리 켜기' : '소리 끄기'} onClick={() => sound.setMuted(!muted)}>
+            {muted ? '🔕' : '🔔'}
+          </button>
           {view.hostId === view.you && <CloseRoomButton act={act} small />}
           <button className="btn ghost tiny" onClick={() => setShowLog((v) => !v)}>
             기록
@@ -273,6 +322,7 @@ export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act;
             name={names[p]}
             active={g.turn === p}
             compact
+            emote={emoteBySeat.get(p)}
             away={awaySeats.has(p)}
             team={isTeam ? teamOf(p) : null}
             freshId={freshId}
@@ -329,6 +379,7 @@ export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act;
             active={myTurn}
             team={isTeam ? teamOf(me) : null}
             highlightColor={canPlaySel ? selCard!.color : null}
+            emote={emoteBySeat.get(me)}
             onColumnClick={onColumnClick}
             dropTargets
             dragOver={drag?.over ?? null}
@@ -376,6 +427,14 @@ export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act;
       )}
 
       {me < 0 && <p className="muted small center-text">관전 중입니다</p>}
+
+      <EmoteFeed items={seatless} />
+      {splash && (
+        <div className={`turn-splash ${splash.mine ? 'mine' : ''}`} key={splash.k} aria-hidden>
+          <div className="ts-text">{splash.text}</div>
+          {splash.sub && <div className="ts-sub">{splash.sub}</div>}
+        </div>
+      )}
 
       {drag && (
         <div className={`drag-ghost ${drag.over ? 'on-target' : ''}`} style={{ left: drag.x, top: drag.y, ['--gw' as string]: `${drag.w}px` }} aria-hidden>
@@ -434,6 +493,7 @@ function TurnBanner({
   } else {
     title = `${turnName} 님의 차례예요`;
     hint = away ? '연결이 끊겼어요 · 다시 들어오길 기다리는 중' : g.phase === 'play' ? '카드를 내려놓는 중…' : '카드를 가져가는 중…';
+    if (g.me >= 0 && (g.turn + 1) % g.players === g.me) hint += ' · 다음은 내 차례예요'
     if (g.me < 0) hint += ' · 관전 중';
   }
   const deckLow = g.deckCount !== null && g.deckCount > 0 && g.deckCount <= g.players * 2;
@@ -558,8 +618,9 @@ const PlayerBoard = forwardRef<
     dropTargets?: boolean;
     dragOver?: string | null;
     away?: boolean;
+    emote?: EmoteEvent;
   }
->(function PlayerBoard({ view, seat, name, active, compact, team, highlightColor, onColumnClick, freshId, dropTargets, dragOver, away }, ref) {
+>(function PlayerBoard({ view, seat, name, active, compact, team, highlightColor, onColumnClick, freshId, dropTargets, dragOver, away, emote }, ref) {
   const c = view.config;
   const cols = view.expeditions[seat];
   const score = scorePlayer(c, cols);
@@ -567,6 +628,7 @@ const PlayerBoard = forwardRef<
     <div ref={ref} className={`board ${compact ? 'compact' : ''} ${active ? 'active' : ''}`}>
       <div className="board-head small">
         <span className="name">
+          <EmoteBubble e={emote} />
           {active && <span className="pulse" aria-hidden />}
           {name}
           {team !== null && <span className="tag">{team === 0 ? 'A팀' : 'B팀'}</span>}

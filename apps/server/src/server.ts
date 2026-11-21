@@ -208,6 +208,14 @@ io.on('connection', (socket) => {
   act('nudge', (r, m) => rooms.nudge(r, m));
 
   socket.on(
+    'emote',
+    handler<{ id: string }>(socket, (p) => {
+      const { room, member } = current(socket);
+      io.to(`r:${room.code}`).emit('emote', rooms.emote(room, member, p.id));
+    }),
+  );
+
+  socket.on(
     'leave',
     handler(socket, () => {
       const { room, member } = current(socket);

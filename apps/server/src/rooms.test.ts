@@ -184,6 +184,24 @@ describe('Rooms', () => {
     expect(room.match!.status).toBe('playing');
   });
 
+  it('감정 표현: 허용 목록 + 도배 방지', () => {
+    vi.useFakeTimers();
+    const { rooms, room, host } = lobby(2);
+    expect(() => rooms.emote(room, host, 'nope')).toThrow(/알 수 없는/);
+    const e = rooms.emote(room, host, 'gg');
+    expect(e).toMatchObject({ from: host.id, name: host.name, id: 'gg', seat: null });
+    expect(() => rooms.emote(room, host, 'gg')).toThrow(/천천히/);
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(1100);
+      rooms.emote(room, host, 'lol');
+    }
+    vi.advanceTimersByTime(1100);
+    expect(() => rooms.emote(room, host, 'lol')).toThrow(/천천히/); // 10초에 5번
+    vi.advanceTimersByTime(10_000);
+    rooms.emote(room, host, 'lol');
+    vi.useRealTimers();
+  });
+
   it('턴 타이머 만료 시 자동 진행', () => {
     vi.useFakeTimers();
     const changed = vi.fn();

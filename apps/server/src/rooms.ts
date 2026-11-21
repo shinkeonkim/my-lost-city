@@ -1,6 +1,8 @@
 import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import {
   CLASSIC,
+  EMOTES,
+  EmoteEvent,
   GameConfig,
   RoomView,
   MatchState,
@@ -40,6 +42,8 @@ export interface Member {
   disconnectedAt: number | null;
   /** 게임이 끝난 뒤 결과 화면에서 로비로 돌아왔는지 */
   backInLobby: boolean;
+  /** 최근 감정 표현 보낸 시각들 (도배 방지) */
+  emoteTimes: number[];
 }
 
 export interface Room {
@@ -278,6 +282,20 @@ export class Rooms {
     this.touch(room);
   }
 
+  /** 감정 표현: 목록에 있는 것만, 1초에 1번 · 10초에 5번까지 */
+  emote(room: Room, member: Member, id: unknown): EmoteEvent {
+    const e = EMOTES.find((x) => x.id === id);
+    if (!e) throw new RoomError('알 수 없는 감정 표현입니다');
+    const now = Date.now();
+    member.emoteTimes = member.emoteTimes.filter((t) => now - t < 10_000);
+    const last = member.emoteTimes[member.emoteTimes.length - 1];
+    if ((last !== undefined && now - last < 1000) || member.emoteTimes.length >= 5) throw new RoomError('조금 천천히 보내 주세요');
+    member.emoteTimes.push(now);
+    this.emoteSeq = (this.emoteSeq + 1) % 1_000_000;
+    return { from: member.id, name: member.name, seat: room.match ? member.seat : null, id: e.id, n: this.emoteSeq };
+  }
+  private emoteSeq = 0;
+
   /** 방장이 방을 닫는다 — 모두 내보내고 방 해제 */
   close(room: Room, by: Member) {
     this.requireHost(room, by);
@@ -413,6 +431,7 @@ function makeMember(name: string, role: Member['role']): Member {
     connections: 0,
     disconnectedAt: null,
     backInLobby: false,
+    emoteTimes: [],
   };
 }
 

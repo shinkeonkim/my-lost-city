@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import { GameConfig, LIMITS, PRESETS, RoomView, autoCost } from '@el/engine';
+import { EmoteEvent, GameConfig, LIMITS, PRESETS, RoomView, autoCost } from '@el/engine';
 import { store } from './storage';
+import { EmoteBubble, EmoteButton, EmoteFeed } from './emotes';
 import { Glyph, SUITS, suitVars } from './theme';
 
 type Act = (event: string, payload?: object) => Promise<boolean>;
@@ -23,7 +24,20 @@ function useBaseUrl() {
   return base;
 }
 
-export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeave: () => void }) {
+export function Lobby({
+  view,
+  act,
+  onLeave,
+  emotes,
+  onEmote,
+}: {
+  view: RoomView;
+  act: Act;
+  onLeave: () => void;
+  emotes: EmoteEvent[];
+  onEmote: (id: string) => void;
+}) {
+  const emoteOf = (id: string) => emotes.find((e) => e.from === id);
   const me = view.members.find((m) => m.id === view.you)!;
   const isHost = view.hostId === view.you;
   const players = view.members.filter((m) => m.role === 'player');
@@ -37,6 +51,7 @@ export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeav
           <div className="code big">{view.code}</div>
         </div>
         <div className="row tight">
+          <EmoteButton onSend={onEmote} />
           {isHost && <CloseRoomButton act={act} />}
           <button className="btn ghost" onClick={onLeave}>
             나가기
@@ -60,7 +75,8 @@ export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeav
             {players.map((m, i) => (
               <li key={m.id} className={m.connected ? '' : 'away'}>
                 <span className="seat">{i + 1}</span>
-                <span className="grow">
+                <span className="grow name-cell">
+                  <EmoteBubble e={emoteOf(m.id)} />
                   {m.name}
                   {m.isHost && <span className="tag">방장</span>}
                   {m.id === view.you && <span className="tag mine">나</span>}
@@ -87,6 +103,7 @@ export function Lobby({ view, act, onLeave }: { view: RoomView; act: Act; onLeav
               </li>
             ))}
           </ol>
+          <EmoteFeed items={emotes.filter((e) => spectators.some((s) => s.id === e.from))} />
           {spectators.length > 0 && (
             <p className="muted small">관전: {spectators.map((m) => m.name).join(', ')}</p>
           )}
