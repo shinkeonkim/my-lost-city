@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, GameView, LogEntry, RoomView, canPlayOnExpedition, scoreColumn, scorePlayer, teamOf } from '@el/engine';
+import { Card, GameView, LogEntry, RoomView, canPlayOnExpedition, playBlockReason, scoreColumn, scorePlayer, teamOf } from '@el/engine';
 import { Glyph, SUITS, cardLabel, suitVars } from './theme';
 import { CardBack, CardFace } from './cards';
 import { hasOrigin, setOrigin } from './flip';
@@ -7,13 +7,14 @@ import { hasOrigin, setOrigin } from './flip';
 type Act = (event: string, payload?: object) => Promise<boolean>;
 
 function useCountdown(deadline: number | null) {
-  const [now, setNow] = useState(Date.now());
+  const [, tick] = useState(0);
   useEffect(() => {
     if (!deadline) return;
-    const t = setInterval(() => setNow(Date.now()), 250);
+    const t = setInterval(() => tick((n) => n + 1), 250);
     return () => clearInterval(t);
   }, [deadline]);
-  return deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null;
+  // 렌더 시점의 현재 시각으로 계산 (예전 tick 시각을 쓰면 새 턴 직후 1초 더 크게 보임)
+  return deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) : null;
 }
 
 function describe(e: LogEntry, names: string[]): string {
@@ -51,7 +52,7 @@ function useMotionOrigins(g: GameView, refs: { deck: React.RefObject<HTMLElement
   });
 }
 
-export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave: () => void }) {
+export function Game({ view, act, onLeave, notify }: { view: RoomView; act: Act; onLeave: () => void; notify: (msg: string) => void }) {
   const g = view.game!;
   const c = g.config;
   const range: [number, number] = [c.minValue, c.maxValue];
@@ -62,7 +63,37 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
   const [showLog, setShowLog] = useState(false);
   const [peek, setPeek] = useState(false);
   useEffect(() => setPeek(false), [g.status, g.round]);
-  const secs = useCountdown(view.turnDeadline);
+  // 서버가 보낸 "남은 시간"을 받은 순간 기준으로 마감 시각 계산 (기기 시계 오차 무관)
+  const turnDeadline = useMemo(() => (view.turnRemainingMs !== null ? Date.now() + view.turnRemainingMs : null), [view]);
+  const nudgeDeadline = useMemo(() => (view.nudgeInMs !== null ? Date.now() + view.nudgeInMs : null), [view]);
+  const secs = useCountdown(turnDeadline);
+  const nudgeLeft = useCountdown(nudgeDeadline);
+  const [shake, setShake] = useState(0);
+  const turnName = names[g.turn] ?? '';
+  const warn = (msg: string) => {
+    notify(msg);
+    setShake((n) => n + 1);
+  };
+  const notMyTurnMsg = me < 0 ? '관전 중에는 플레이할 수 없어요' : `지금은 ${turnName} 님의 차례예요`;
+
+  // 내 차례가 오면 진동 + (다른 탭을 보고 있으면) 탭 제목으로 알림
+  useEffect(() => {
+    if (!myTurn) return;
+    try {
+      navigator.vibrate?.(60);
+    } catch {
+      /* 지원 안 함 */
+    }
+    if (document.hidden) document.title = '● 내 차례 — Expedition Lines';
+    const restore = () => {
+      if (!document.hidden) document.title = 'Expedition Lines';
+    };
+    document.addEventListener('visibilitychange', restore);
+    return () => {
+      document.removeEventListener('visibilitychange', restore);
+      document.title = 'Expedition Lines';
+    };
+  }, [myTurn]);
 
   const deckRef = useRef<HTMLDivElement>(null);
   const boards = useRef(new Map<number, HTMLElement>()).current;
@@ -153,11 +184,38 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
     if (p !== me) others.push(p);
   }
 
-  const turnName = names[g.turn] ?? '';
-  let status: string;
-  if (g.status !== 'playing') status = '판 종료';
-  else if (myTurn) status = g.phase === 'play' ? '내 차례 — 카드를 내세요' : '이제 카드를 뽑으세요';
-  else status = `${turnName}의 차례${g.phase === 'draw' ? ' (뽑는 중)' : ''}`;
+  const turnMember = view.members.find((m) => m.seat === g.turn);
+  const awaySeats = new Set(view.members.filter((m) => m.seat !== null && !m.connected).map((m) => m.seat!));
+  const lastEntry = g.log[g.log.length - 1];
+  const iJustDiscarded =
+    myTurn && g.phase === 'draw' && lastEntry && lastEntry.player === me && lastEntry.move.type === 'discard' && lastEntry.card ? lastEntry.card : null;
+
+  const onHandClick = (card: Card) => {
+    if (Date.now() - suppressClick.current < 300) return;
+    if (g.status !== 'playing') return;
+    if (!myTurn) return warn(notMyTurnMsg);
+    if (g.phase === 'draw') return warn('먼저 카드를 1장 가져오세요 — 덱이나 빛나는 버림 더미를 누르세요');
+    setSelected((s) => (s === card.id ? null : card.id));
+  };
+  const onDeckClick = () => {
+    if (g.drawable.deck) return draw('deck');
+    if (g.status !== 'playing') return;
+    if (!myTurn) return warn(notMyTurnMsg);
+    if (g.phase === 'play') return warn('먼저 카드를 1장 내려놓으세요');
+  };
+  /** 버림 더미를 눌렀는데 놓기/가져오기가 아닐 때 이유 안내 */
+  const onPileIdle = (color: number) => {
+    if (!myTurn) return;
+    if (g.phase === 'draw' && iJustDiscarded?.color === color) return warn('방금 버린 카드는 바로 다시 가져올 수 없어요');
+    if (g.phase === 'play' && selCard && selCard.color !== color) return warn('같은 색 버림 더미에만 버릴 수 있어요');
+  };
+  const onColumnClick = (col: number) => {
+    if (!myTurn || g.phase !== 'play' || !selCard) return;
+    if (col !== selCard.color) return warn('같은 색 탐험대에만 놓을 수 있어요');
+    const reason = playBlockReason(c, g.expeditions[me][col], selCard);
+    if (reason) return warn(`${reason} (버리기는 가능해요)`);
+    play();
+  };
 
   const last = g.log[g.log.length - 1];
   const freshId = last && last.card && last.move.type !== 'draw' ? last.card.id : null;
@@ -172,16 +230,27 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
           </b>
           <span className="muted"> · {view.code}</span>
         </div>
-        <div className={`status ${myTurn ? 'mine' : ''}`} key={status}>
-          {status}
-        </div>
         <div className="small right">
-          {secs !== null && <span className={`timer ${secs <= 10 ? 'hot' : ''}`}>{secs}s</span>}
           <button className="btn ghost tiny" onClick={() => setShowLog((v) => !v)}>
             기록
           </button>
         </div>
       </header>
+
+      {g.status === 'playing' && (
+        <TurnBanner
+          g={g}
+          myTurn={myTurn}
+          turnName={turnName}
+          away={!!turnMember && !turnMember.connected}
+          secs={secs}
+          nudgeLeft={view.nudgeInMs !== null ? nudgeLeft : null}
+          onNudge={() => act('nudge')}
+          selCard={selCard}
+          justDiscarded={iJustDiscarded}
+          shake={shake}
+        />
+      )}
 
       {showLog && (
         <div className="log panel">
@@ -202,6 +271,7 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
             name={names[p]}
             active={g.turn === p}
             compact
+            away={awaySeats.has(p)}
             team={isTeam ? teamOf(p) : null}
             freshId={freshId}
           />
@@ -228,10 +298,11 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
               onDiscard={() => discard()}
               dragOver={drag?.over === `discard-${color}`}
               onDraw={() => draw(color)}
+              onIdle={() => onPileIdle(color)}
             />
           ))}
         </div>
-        <button className={`deck ${g.drawable.deck ? 'drawable' : ''}`} onClick={() => g.drawable.deck && draw('deck')} aria-label={`덱에서 뽑기 (${g.deckCount ?? '?'}장)`}>
+        <button className={`deck ${g.drawable.deck ? 'drawable' : ''}`} onClick={onDeckClick} aria-label={`덱에서 뽑기 (${g.deckCount ?? '?'}장)`}>
           {(g.deckCount ?? 10) > 2 && <CardBack className="layer l2" />}
           {(g.deckCount ?? 10) > 1 && <CardBack className="layer l1" />}
           {!g.deckEmpty && <CardBack ref={deckRef} className="layer l0" />}
@@ -256,7 +327,7 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
             active={myTurn}
             team={isTeam ? teamOf(me) : null}
             highlightColor={canPlaySel ? selCard!.color : null}
-            onColumnClick={(col) => selCard && col === selCard.color && play()}
+            onColumnClick={onColumnClick}
             dropTargets
             dragOver={drag?.over ?? null}
             freshId={freshId}
@@ -275,7 +346,7 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
                 </>
               ) : (
                 <span className="muted small">
-                  {myTurn ? (g.phase === 'play' ? '낼 카드를 고르세요' : '덱이나 빛나는 버림 더미를 누르세요') : ' '}
+                  {myTurn ? (g.phase === 'play' ? '카드를 누르거나, 끌어서 탐험대·버림 더미에 놓으세요' : '덱이나 빛나는 버림 더미를 누르세요') : ' '}
                 </span>
               )}
             </div>
@@ -294,10 +365,7 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
                   dim={myTurn && g.phase === 'play' && !playable.has(card.id)}
                   className={drag?.card.id === card.id ? 'dragging' : ''}
                   onPointerDown={(e) => startDrag(e, card)}
-                  onClick={() => {
-                    if (Date.now() - suppressClick.current < 300) return;
-                    if (myTurn && g.phase === 'play') setSelected((s) => (s === card.id ? null : card.id));
-                  }}
+                  onClick={() => onHandClick(card)}
                 />
               ))}
             </div>
@@ -325,6 +393,75 @@ export function Game({ view, act, onLeave }: { view: RoomView; act: Act; onLeave
   );
 }
 
+/** 화면 위쪽 차례 안내: 누구 차례인지, 지금 할 일(① 내려놓기 → ② 가져오기), 남은 시간 */
+function TurnBanner({
+  g,
+  myTurn,
+  turnName,
+  away,
+  secs,
+  nudgeLeft,
+  onNudge,
+  selCard,
+  justDiscarded,
+  shake,
+}: {
+  g: GameView;
+  myTurn: boolean;
+  turnName: string;
+  away: boolean;
+  secs: number | null;
+  nudgeLeft: number | null;
+  onNudge: () => void;
+  selCard: Card | null;
+  justDiscarded: Card | null;
+  shake: number;
+}) {
+  const c = g.config;
+  let title: string;
+  let hint: string;
+  if (myTurn && g.phase === 'play') {
+    title = '내 차례예요 · 카드를 1장 내려놓으세요';
+    if (selCard) {
+      const reason = playBlockReason(c, g.expeditions[g.me][selCard.color], selCard);
+      hint = reason ? `${cardLabel(selCard)}: ${reason} — 버림 더미에 버릴 수는 있어요` : `${cardLabel(selCard)}: 내 탐험대에 놓거나, 같은 색 버림 더미에 버리세요`;
+    } else hint = '내 탐험대에 놓거나 같은 색 버림 더미에 버리세요';
+  } else if (myTurn) {
+    title = '이제 카드를 1장 가져오세요';
+    hint = justDiscarded ? `덱이나 빛나는 버림 더미에서 — 방금 버린 ${cardLabel(justDiscarded)}는 다시 못 가져와요` : '덱이나 빛나는 버림 더미를 누르세요';
+  } else {
+    title = `${turnName} 님의 차례예요`;
+    hint = away ? '연결이 끊겼어요 · 다시 들어오길 기다리는 중' : g.phase === 'play' ? '카드를 내려놓는 중…' : '카드를 가져가는 중…';
+    if (g.me < 0) hint += ' · 관전 중';
+  }
+  const deckLow = g.deckCount !== null && g.deckCount > 0 && g.deckCount <= g.players * 2;
+  return (
+    <section className={`turn-banner ${myTurn ? 'mine' : 'theirs'} ${away ? 'away' : ''}`} aria-live="polite">
+      <div className={`tb-body ${shake ? 'shake' : ''}`} key={`${shake}-${g.turn}-${g.phase}`}>
+        <div className="tb-text">
+          <div className="tb-title">{title}</div>
+          <div className="tb-hint">{hint}</div>
+        </div>
+        <div className="tb-side">
+          {myTurn && (
+            <ol className="tb-steps" aria-label="이번 차례 단계">
+              <li className={g.phase === 'play' ? 'on' : 'done'}>① 내려놓기</li>
+              <li className={g.phase === 'draw' ? 'on' : ''}>② 가져오기</li>
+            </ol>
+          )}
+          {secs !== null && <span className={`tb-timer ${secs <= 10 ? 'hot' : ''}`}>{secs}초</span>}
+          {away && nudgeLeft !== null && g.me >= 0 && (
+            <button className="btn tiny" disabled={nudgeLeft > 0} onClick={onNudge} title="자동으로 카드 1장을 버리고 덱에서 1장 가져옵니다">
+              대신 진행{nudgeLeft > 0 ? ` (${nudgeLeft}초)` : ''}
+            </button>
+          )}
+        </div>
+      </div>
+      {deckLow && <div className="tb-deck-low">덱 {g.deckCount}장 남음 · 덱이 바닥나면 판이 끝나요</div>}
+    </section>
+  );
+}
+
 /** 버림 더미 — 마우스를 올리거나 장수 배지를 누르면 쌓인 카드가 위로 스르륵 펼쳐진다 */
 const Pile = forwardRef<
   HTMLDivElement,
@@ -340,8 +477,9 @@ const Pile = forwardRef<
     dragOver: boolean;
     onDiscard: () => void;
     onDraw: () => void;
+    onIdle: () => void;
   }
->(function Pile({ color, cards, count, range, reveal, target, drawable, freshId, dragOver, onDiscard, onDraw }, ref) {
+>(function Pile({ color, cards, count, range, reveal, target, drawable, freshId, dragOver, onDiscard, onDraw, onIdle }, ref) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -369,7 +507,12 @@ const Pile = forwardRef<
     >
       <button
         className="pile-hit"
-        onClick={() => (target ? onDiscard() : drawable ? onDraw() : canPeek ? setOpen((v) => !v) : undefined)}
+        onClick={() => {
+          if (target) return onDiscard();
+          if (drawable) return onDraw();
+          onIdle();
+          if (canPeek) setOpen((v) => !v);
+        }}
         aria-label={`${SUITS[color].name} 버림 더미 ${count}장${drawable ? ', 눌러서 가져오기' : ''}${target ? ', 눌러서 버리기' : ''}`}
       >
         <span className="pile-stack">
@@ -412,8 +555,9 @@ const PlayerBoard = forwardRef<
     freshId: string | null;
     dropTargets?: boolean;
     dragOver?: string | null;
+    away?: boolean;
   }
->(function PlayerBoard({ view, seat, name, active, compact, team, highlightColor, onColumnClick, freshId, dropTargets, dragOver }, ref) {
+>(function PlayerBoard({ view, seat, name, active, compact, team, highlightColor, onColumnClick, freshId, dropTargets, dragOver, away }, ref) {
   const c = view.config;
   const cols = view.expeditions[seat];
   const score = scorePlayer(c, cols);
@@ -424,6 +568,7 @@ const PlayerBoard = forwardRef<
           {active && <span className="pulse" aria-hidden />}
           {name}
           {team !== null && <span className="tag">{team === 0 ? 'A팀' : 'B팀'}</span>}
+          {away && <span className="tag away-tag">연결 끊김</span>}
         </span>
         <span className="muted head-right">
           <span className="mini-hand" title={`손패 ${view.handCounts[seat]}장`} aria-label={`손패 ${view.handCounts[seat]}장`}>
@@ -551,7 +696,7 @@ function RoundOver({ view, act, onLeave, onPeek }: { view: RoomView; act: Act; o
           </p>
         )}
         <div className="row">
-          <button className="btn primary grow" onClick={() => act('next')}>
+          <button className="btn primary grow" onClick={() => act('next', { round: g.round, status: g.status })}>
             {matchOver ? '로비로 돌아가기' : '다음 판 시작'}
           </button>
           <button className="btn" onClick={onPeek}>

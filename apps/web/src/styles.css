@@ -1136,3 +1136,145 @@ button.card:focus-visible {
   justify-self: center;
   width: max-content;
 }
+
+/* ---------- 차례 안내 배너 ---------- */
+.turn-banner {
+  position: sticky;
+  top: 44px;
+  z-index: 8;
+  margin: 0 0 10px;
+}
+.tb-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  animation: tb-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes tb-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+.turn-banner.mine .tb-body {
+  background: linear-gradient(135deg, #e08a34, #c4612a);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(196, 97, 42, 0.45);
+  animation: tb-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), tb-glow 2s ease-in-out 0.4s infinite;
+}
+@keyframes tb-glow {
+  50% {
+    box-shadow: 0 6px 28px rgba(224, 138, 52, 0.75);
+  }
+}
+.turn-banner.away .tb-body {
+  border-color: var(--danger);
+}
+.tb-body.shake {
+  animation: shake 0.42s;
+}
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+.tb-text {
+  flex: 1;
+  min-width: 0;
+}
+.tb-title {
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+.tb-hint {
+  font-size: 0.82rem;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+.turn-banner.theirs .tb-hint {
+  color: var(--muted);
+  opacity: 1;
+}
+.tb-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.tb-steps {
+  display: flex;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tb-steps li {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  white-space: nowrap;
+}
+.tb-steps li.on {
+  background: #fff;
+  color: #b4521f;
+}
+.tb-steps li.done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.tb-timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.tb-timer.hot {
+  background: var(--danger);
+  color: #fff;
+  animation: pulse 0.6s infinite;
+}
+.tb-deck-low {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--danger);
+}
+.away-tag {
+  background: color-mix(in srgb, var(--danger) 18%, var(--panel));
+  border-color: var(--danger);
+  color: var(--danger);
+}
+@media (max-width: 520px) {
+  .tb-body {
+    flex-wrap: wrap;
+    padding: 9px 12px;
+  }
+  .tb-title {
+    font-size: 0.98rem;
+  }
+  .tb-side {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+/* 버림 더미가 아주 커도 펼친 높이가 화면 밖으로 나가지 않게 간격을 줄임 */
+.pile.open .in-pile {
+  transform: translateY(calc(var(--depth) * -1 * min(19px, 240px / var(--n))));
+}

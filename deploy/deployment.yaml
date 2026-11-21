@@ -31,6 +31,7 @@ spec:
             # QR/공유 링크에 쓰는 주소 (Cloudflare Tunnel Public Hostname과 맞출 것)
             - { name: PUBLIC_URL, value: "https://my-lost-city.shinkeonkim.com" }
             - { name: MAX_ROOMS, value: "5" } # 동시에 열 수 있는 방 개수
+            - { name: ROOM_IDLE_MINUTES, value: "60" } # 모두 나간 뒤 이 시간 동안 유휴면 방 해제
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 5

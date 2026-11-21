@@ -200,7 +200,10 @@ io.on('connection', (socket) => {
   act<{ id: string }>('kick', (r, m, p) => rooms.kick(r, m, String(p.id)));
   act('start', (r, m) => rooms.start(r, m));
   act<{ move: any }>('move', (r, m, p) => rooms.move(r, m, p.move));
-  act('next', (r, m) => rooms.next(r, m));
+  act<{ round?: number; status?: string }>('next', (r, m, p) =>
+    rooms.next(r, m, { round: typeof p.round === 'number' ? p.round : undefined, status: typeof p.status === 'string' ? p.status : undefined }),
+  );
+  act('nudge', (r, m) => rooms.nudge(r, m));
 
   socket.on(
     'leave',

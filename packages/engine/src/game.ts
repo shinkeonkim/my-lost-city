@@ -119,11 +119,17 @@ export function newMatch(c: GameConfig, players: number, rng: Rng): MatchState {
 }
 
 export function canPlayOnExpedition(c: GameConfig, column: Card[], card: Card): boolean {
+  return playBlockReason(c, column, card) === null;
+}
+
+/** 탐험대에 놓을 수 없는 이유 (놓을 수 있으면 null) */
+export function playBlockReason(c: GameConfig, column: Card[], card: Card): string | null {
   const last = column[column.length - 1];
-  if (!last) return true;
-  if (card.value === 0) return last.value === 0;
-  if (last.value === 0) return true;
-  return c.allowEqual ? card.value >= last.value : card.value > last.value;
+  if (!last) return null;
+  if (card.value === 0) return last.value === 0 ? null : '투자 카드는 숫자 카드를 놓기 전에만 놓을 수 있어요';
+  if (last.value === 0) return null;
+  if (c.allowEqual ? card.value >= last.value : card.value > last.value) return null;
+  return c.allowEqual ? `이 탐험대에는 ${last.value} 이상만 놓을 수 있어요` : `이 탐험대에는 ${last.value}보다 큰 숫자만 놓을 수 있어요`;
 }
 
 export function canDrawFrom(c: GameConfig, s: RoundState, source: DrawSource): boolean {
@@ -142,14 +148,15 @@ export function applyMove(m: MatchState, player: number, move: Move): void {
   if (s.turn !== player) throw new MoveError('내 차례가 아닙니다');
 
   if (move.type === 'play' || move.type === 'discard') {
-    if (s.phase !== 'play') throw new MoveError('지금은 카드를 뽑을 차례입니다');
+    if (s.phase !== 'play') throw new MoveError('먼저 카드를 1장 가져오세요');
     const hand = s.hands[player];
     const idx = hand.findIndex((x) => x.id === move.cardId);
     if (idx < 0) throw new MoveError('손에 없는 카드입니다');
     const card = hand[idx];
     if (move.type === 'play') {
       const column = s.expeditions[player][card.color];
-      if (!canPlayOnExpedition(c, column, card)) throw new MoveError('그 열에는 이 카드를 놓을 수 없습니다');
+      const reason = playBlockReason(c, column, card);
+      if (reason) throw new MoveError(reason);
       column.push(card);
       s.justDiscarded = null;
     } else {
@@ -163,11 +170,16 @@ export function applyMove(m: MatchState, player: number, move: Move): void {
   }
 
   if (move.type === 'draw') {
-    if (s.phase !== 'draw') throw new MoveError('먼저 카드를 내야 합니다');
+    if (s.phase !== 'draw') throw new MoveError('먼저 카드를 1장 내려놓으세요');
     if (move.source !== 'deck' && (typeof move.source !== 'number' || move.source < 0 || move.source >= c.colors)) {
       throw new MoveError('잘못된 더미입니다');
     }
-    if (!canDrawFrom(c, s, move.source)) throw new MoveError('그 더미에서는 뽑을 수 없습니다');
+    if (!canDrawFrom(c, s, move.source)) {
+      const pile = move.source === 'deck' ? null : s.discards[move.source];
+      throw new MoveError(
+        pile && pile.length && pile[pile.length - 1].id === s.justDiscarded ? '방금 버린 카드는 바로 다시 가져올 수 없어요' : '그 더미에서는 가져올 수 없어요',
+      );
+    }
     const card = move.source === 'deck' ? s.deck.shift()! : s.discards[move.source].pop()!;
     s.hands[player] = sortHand([...s.hands[player], card]);
     pushLog(s, { player, move, card: move.source === 'deck' ? undefined : card });

@@ -19,9 +19,12 @@ import {
 
 export const MAX_PLAYERS = 4;
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const IDLE_ROOM_MS = 30 * 60 * 1000;
-/** 방이 가득 찼을 때, 아무도 접속해 있지 않은 방은 이 시간이 지나면 정리해 자리를 만든다 */
-const ABANDONED_ROOM_MS = 2 * 60 * 1000;
+/** 모두 나간(접속자 0) 상태로 이만큼 아무 일도 없으면 방을 해제한다. 기본 60분 (ROOM_IDLE_MINUTES) */
+export const IDLE_ROOM_MS = Math.max(1, Number(process.env.ROOM_IDLE_MINUTES ?? 60) || 60) * 60 * 1000;
+/** 차례인 사람이 이만큼 끊겨 있으면 다른 플레이어가 대신 진행할 수 있다 */
+export const NUDGE_AFTER_MS = 20_000;
+const PW_FAIL_WINDOW_MS = 5 * 60 * 1000;
+const PW_FAIL_LIMIT = 10;
 export const MAX_ROOMS = Math.max(1, Number(process.env.MAX_ROOMS ?? 5) || 5);
 
 const rng = () => randomInt(0, 2 ** 32) / 2 ** 32;
@@ -34,6 +37,7 @@ export interface Member {
   /** 게임 중 좌석 번호 */
   seat: number | null;
   connections: number;
+  disconnectedAt: number | null;
 }
 
 export interface Room {
@@ -46,6 +50,7 @@ export interface Room {
   turnDeadline: number | null;
   timer: NodeJS.Timeout | null;
   lastActive: number;
+  failedPasswords: number[];
 }
 
 export class RoomError extends Error {}
@@ -75,9 +80,9 @@ export class Rooms {
   }
 
   create(name: string, password?: string): { room: Room; member: Member } {
-    if (this.rooms.size >= this.maxRooms) this.sweep(Date.now(), ABANDONED_ROOM_MS);
+    if (this.rooms.size >= this.maxRooms) this.sweep();
     if (this.rooms.size >= this.maxRooms) {
-      throw new RoomError(`지금은 방이 가득 찼습니다 (최대 ${this.maxRooms}개). 잠시 후 다시 시도하거나 기존 방에 참가하세요`);
+      throw new RoomError(`지금은 방이 가득 찼습니다 (최대 ${this.maxRooms}개). 비어 있는 방은 1시간 뒤 자동으로 정리돼요 — 기존 방에 참가하거나 나중에 다시 시도하세요`);
     }
     const code = this.newCode();
     const member = makeMember(name, 'player');
@@ -91,6 +96,7 @@ export class Rooms {
       turnDeadline: null,
       timer: null,
       lastActive: Date.now(),
+      failedPasswords: [],
     };
     this.rooms.set(code, room);
     return { room, member };
@@ -103,7 +109,15 @@ export class Rooms {
       const existing = room.members.find((m) => m.token === opts.token);
       if (existing) return { room, member: existing };
     }
-    if (room.password && !checkPassword(room.password, opts.password ?? '')) throw new RoomError('암호가 틀렸습니다');
+    if (room.password) {
+      const now = Date.now();
+      room.failedPasswords = room.failedPasswords.filter((t) => now - t < PW_FAIL_WINDOW_MS);
+      if (room.failedPasswords.length >= PW_FAIL_LIMIT) throw new RoomError('암호 시도가 너무 많습니다. 몇 분 뒤 다시 시도하세요');
+      if (!checkPassword(room.password, opts.password ?? '')) {
+        room.failedPasswords.push(now);
+        throw new RoomError('암호가 틀렸습니다');
+      }
+    }
     const playerCount = room.members.filter((m) => m.role === 'player').length;
     const asPlayer = !opts.spectator && !room.match && playerCount < MAX_PLAYERS;
     const member = makeMember(uniqueName(room, opts.name), asPlayer ? 'player' : 'spectator');
@@ -114,11 +128,13 @@ export class Rooms {
 
   connect(room: Room, member: Member) {
     member.connections++;
+    member.disconnectedAt = null;
     this.touch(room);
   }
 
   disconnect(room: Room, member: Member) {
     member.connections = Math.max(0, member.connections - 1);
+    if (member.connections === 0) member.disconnectedAt = Date.now();
     if (member.connections === 0 && !room.match && member.role === 'spectator') {
       // 로비 관전자는 끊기면 정리
       room.members = room.members.filter((m) => m !== member);
@@ -208,9 +224,14 @@ export class Rooms {
   }
 
   /** 다음 판 시작 또는 (매치 종료 후) 로비로 */
-  next(room: Room, by: Member) {
+  /** expect: 클라이언트가 본 판 번호/상태 — 이미 다른 사람이 진행했으면 조용히 무시 */
+  next(room: Room, by: Member, expect?: { round?: number; status?: string }) {
     const match = room.match;
-    if (!match) throw new RoomError('게임이 없습니다');
+    if (!match) {
+      if (expect?.status === 'match-over') return;
+      throw new RoomError('게임이 없습니다');
+    }
+    if (expect && (expect.round !== undefined && expect.round !== match.round || (expect.status && expect.status !== match.status))) return;
     if (by.seat === null && by.id !== room.hostId) throw new RoomError('플레이어만 진행할 수 있습니다');
     if (match.status === 'round-over') {
       startNextRound(match, rng);
@@ -223,6 +244,25 @@ export class Rooms {
       throw new RoomError('판이 아직 끝나지 않았습니다');
     }
     this.touch(room);
+  }
+
+  /** 끊긴 플레이어의 차례를 다른 플레이어가 대신 진행 (자동 버리기 + 덱에서 뽑기) */
+  nudge(room: Room, by: Member) {
+    const match = room.match;
+    if (!match || match.status !== 'playing') throw new RoomError('진행 중인 판이 아닙니다');
+    if (by.seat === null) throw new RoomError('플레이어만 할 수 있습니다');
+    const wait = this.nudgeInMs(room);
+    if (wait === null) throw new RoomError('차례인 플레이어가 접속해 있습니다');
+    if (wait > 0) throw new RoomError(`${Math.ceil(wait / 1000)}초 뒤에 대신 진행할 수 있어요`);
+    this.timeout(room);
+  }
+
+  nudgeInMs(room: Room, now = Date.now()): number | null {
+    const match = room.match;
+    if (!match || match.status !== 'playing') return null;
+    const cur = room.members.find((m) => m.seat === match.state.turn);
+    if (!cur || cur.connections > 0 || cur.disconnectedAt === null) return null;
+    return Math.max(0, NUDGE_AFTER_MS - (now - cur.disconnectedAt));
   }
 
   /** 시간 초과: 현재 차례를 자동으로 진행 */
@@ -281,7 +321,7 @@ export class Rooms {
     this.rooms.delete(room.code);
   }
 
-  /** 아무도 접속하지 않은 채 오래된 방 정리 */
+  /** 모두 나간 채(접속자 0) IDLE_ROOM_MS 동안 활동이 없는 방 해제 — 1분마다 + 방 생성 시 호출 */
   sweep(now = Date.now(), idleMs = IDLE_ROOM_MS) {
     for (const room of this.rooms.values()) {
       const anyone = room.members.some((m) => m.connections > 0);
@@ -304,6 +344,7 @@ export class Rooms {
         role: m.role,
         seat: m.seat,
         connected: m.connections > 0,
+        awayMs: m.connections > 0 || m.disconnectedAt === null ? null : Date.now() - m.disconnectedAt,
         isHost: m.id === room.hostId,
       })),
       config: room.config,
@@ -315,7 +356,8 @@ export class Rooms {
       },
       game: room.match ? viewFor(room.match, member.seat ?? -1) : null,
       seats,
-      turnDeadline: room.turnDeadline,
+      turnRemainingMs: room.turnDeadline ? Math.max(0, room.turnDeadline - Date.now()) : null,
+      nudgeInMs: this.nudgeInMs(room),
     };
   }
 }
@@ -328,6 +370,7 @@ function makeMember(name: string, role: Member['role']): Member {
     role,
     seat: null,
     connections: 0,
+    disconnectedAt: null,
   };
 }
 

@@ -203,8 +203,14 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
       onExit('방에서 나갔습니다');
     };
     const onErr = (m: string) => setToast(m);
-    const onReconnect = () => {
-      if (store.token(code)) enter({ name: store.name() });
+    const onReconnect = async () => {
+      if (!store.token(code)) return;
+      const err = await enter({ name: store.name() });
+      // 서버 재시작 등으로 방이 사라졌으면 멈춘 화면에 남지 말고 처음으로
+      if (err) {
+        store.setToken(code, null);
+        onExit(`${err} — 서버가 재시작되어 방이 닫혔을 수 있어요`);
+      }
     };
     socket.on('room', onRoom);
     socket.on('kicked', onKicked);
@@ -243,7 +249,7 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
 
   return (
     <>
-      {view.game ? <Game view={view} act={act} onLeave={leave} /> : <Lobby view={view} act={act} onLeave={leave} />}
+      {view.game ? <Game view={view} act={act} onLeave={leave} notify={setToast} /> : <Lobby view={view} act={act} onLeave={leave} />}
       {toast && <div className="toast" role="status">{toast}</div>}
       {!connected && <div className="offline">연결이 끊겼습니다 — 다시 연결하는 중…</div>}
     </>

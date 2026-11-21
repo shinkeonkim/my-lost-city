@@ -95,19 +95,63 @@ describe('Rooms', () => {
     expect(rooms.view(room, spec).game!.hand).toEqual([]);
   });
 
-  it('방은 최대 개수까지만, 버려진 방은 정리해 자리를 만듦', () => {
+  it('방은 최대 개수까지만, 모두 나간 채 1시간 유휴면 해제되어 자리가 남', () => {
     vi.useFakeTimers();
     const rooms = new Rooms(() => {}, 2);
     const a = rooms.create('a');
     rooms.connect(a.room, a.member);
-    const b = rooms.create('b'); // 아무도 접속 안 함
+    const b = rooms.create('b');
+    rooms.connect(b.room, b.member);
+    rooms.disconnect(b.room, b.member); // b 방은 모두 나감
     expect(() => rooms.create('c')).toThrow(/가득/);
-    vi.advanceTimersByTime(3 * 60 * 1000);
+    vi.advanceTimersByTime(59 * 60 * 1000);
+    rooms.sweep();
+    expect(rooms.rooms.has(b.room.code)).toBe(true); // 아직 1시간 안 됨
+    expect(() => rooms.create('c')).toThrow(/가득/);
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    rooms.sweep();
+    expect(rooms.rooms.has(b.room.code)).toBe(false);
     const c = rooms.create('c');
     expect(rooms.rooms.has(b.room.code)).toBe(false);
     expect(rooms.rooms.has(a.room.code)).toBe(true);
     expect(rooms.rooms.has(c.room.code)).toBe(true);
     vi.useRealTimers();
+  });
+
+  it('끊긴 플레이어 차례는 20초 뒤 다른 플레이어가 대신 진행', () => {
+    vi.useFakeTimers();
+    const { rooms, room, host, others } = lobby(2);
+    rooms.start(room, host);
+    const seated = [host, others[0]];
+    const cur = seated.find((m) => m.seat === room.match!.state.turn)!;
+    const other = seated.find((m) => m !== cur)!;
+    expect(() => rooms.nudge(room, other)).toThrow(/접속해 있습니다/);
+    rooms.disconnect(room, cur);
+    expect(rooms.view(room, other).members.find((m) => m.id === cur.id)!.connected).toBe(false);
+    expect(() => rooms.nudge(room, other)).toThrow(/초 뒤/);
+    vi.advanceTimersByTime(21_000);
+    rooms.nudge(room, other);
+    expect(room.match!.state.turn).toBe(other.seat);
+    expect(room.match!.state.hands[cur.seat!]).toHaveLength(8);
+    vi.useRealTimers();
+  });
+
+  it('방 단위 암호 시도 제한', () => {
+    const { rooms, room } = lobby(1, 'pw');
+    for (let i = 0; i < 10; i++) expect(() => rooms.join(room.code, { name: 'x', password: 'bad' })).toThrow(/틀렸/);
+    expect(() => rooms.join(room.code, { name: 'x', password: 'pw' })).toThrow(/너무 많/);
+  });
+
+  it('다음 판 중복 요청은 조용히 무시', () => {
+    const { rooms, room, host, others } = lobby(2);
+    rooms.setConfig(room, host, { rounds: 2 });
+    rooms.start(room, host);
+    const bySeat = [host, others[0]].sort((a, b) => a.seat! - b.seat!);
+    while (room.match!.status === 'playing') rooms.move(room, bySeat[room.match!.state.turn], autoMove(room.match!));
+    rooms.next(room, host, { round: 0, status: 'round-over' });
+    rooms.next(room, others[0], { round: 0, status: 'round-over' }); // 늦게 누른 사람
+    expect(room.match!.round).toBe(1);
+    expect(room.match!.status).toBe('playing');
   });
 
   it('턴 타이머 만료 시 자동 진행', () => {
