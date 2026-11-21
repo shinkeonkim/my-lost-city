@@ -58,7 +58,7 @@ export const CLASSIC: GameConfig = {
   bonusMultiplied: false,
   allowEqual: false,
   forbidRedrawDiscard: true,
-  rounds: 3,
+  rounds: 1, // 기본 1판 (원작은 3판 — 로비에서 늘릴 수 있음)
   turnTimerSec: 0,
   showDeckCount: true,
   showScorePreview: true,
