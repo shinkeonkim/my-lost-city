@@ -106,6 +106,7 @@ export function newRound(c: GameConfig, players: number, starter: number, rng: R
 }
 
 export function newMatch(c: GameConfig, players: number, rng: Rng): MatchState {
+  // 첫 판 첫 차례도 무작위
   const starter = Math.floor(rng() * players);
   return {
     config: c,
@@ -204,17 +205,8 @@ function finishRound(m: MatchState) {
 
 export function startNextRound(m: MatchState, rng: Rng): void {
   if (m.status !== 'round-over') throw new MoveError('다음 판을 시작할 수 없습니다');
-  // 원작: 점수가 가장 높은 사람이 다음 판 선. 동점이면 직전 선 다음 사람부터 찾는다.
-  const totals = matchTotals(m);
-  const best = Math.max(...totals);
-  let starter = 0;
-  for (let i = 1; i <= m.players; i++) {
-    const p = (m.roundStarter + i) % m.players;
-    if (totals[p] === best) {
-      starter = p;
-      break;
-    }
-  }
+  // 매 판 첫 차례는 무작위 (서버는 crypto 난수를 넘긴다)
+  const starter = Math.floor(rng() * m.players);
   m.round += 1;
   m.roundStarter = starter;
   m.state = newRound(m.config, m.players, starter, rng);

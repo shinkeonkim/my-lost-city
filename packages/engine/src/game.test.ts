@@ -120,7 +120,7 @@ describe('턴 규칙', () => {
     applyMove(m, p, { type: 'play', cardId: '0-6' });
   });
 
-  it('덱 소진 시 판 종료, 다음 판은 고득점자가 선', () => {
+  it('덱 소진 시 판 종료, 다음 판 첫 차례는 무작위', () => {
     const m = setup({ ...CLASSIC, rounds: 2 });
     let guard = 0;
     while (m.status === 'playing' && guard++ < 1000) {
@@ -129,10 +129,18 @@ describe('턴 규칙', () => {
     }
     expect(m.status).toBe('round-over');
     expect(m.roundScores).toHaveLength(1);
-    const [a, b] = m.roundScores[0];
-    startNextRound(m, seeded(3));
-    if (a !== b) expect(m.state.turn).toBe(a > b ? 0 : 1);
+    startNextRound(m, () => 0.99);
+    expect(m.state.turn).toBe(1); // 점수와 무관하게 난수로 정함
+    expect(m.roundStarter).toBe(1);
     expect(m.round).toBe(1);
+  });
+
+  it('첫 차례는 모든 자리에 고르게 돌아감', () => {
+    for (const players of [2, 3, 4]) {
+      const seen = new Set<number>();
+      for (let seed = 1; seed <= 60; seed++) seen.add(newMatch(CLASSIC, players, seeded(seed * 7919)).state.turn);
+      expect([...seen].sort()).toEqual(Array.from({ length: players }, (_, i) => i));
+    }
   });
 
   it('뷰는 상대 손패를 숨김', () => {

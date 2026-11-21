@@ -117,16 +117,26 @@ export function Game({
   const turnKey = `${g.round}-${g.turn}-${g.status}`;
   const firstTurnKey = useRef(turnKey);
   useEffect(() => {
-    if (turnKey === firstTurnKey.current || g.status !== 'playing') return;
+    // 판의 첫 차례(아직 아무도 안 둠)는 무작위로 정해졌음을 알리고, 그 외에는 차례가 바뀔 때만
+    const fresh = g.log.length === 0;
+    if (g.status !== 'playing' || (turnKey === firstTurnKey.current && !fresh)) return;
     const mine = g.turn === me;
     setSplash({
-      text: mine ? '내 차례!' : `${turnName} 님 차례`,
-      sub: mine ? '카드를 1장 내려놓고, 1장 가져오세요' : (g.turn + 1) % g.players === me ? '다음은 내 차례예요' : '',
+      text: fresh ? (mine ? '내가 먼저!' : `${turnName} 님부터 시작`) : mine ? '내 차례!' : `${turnName} 님 차례`,
+      sub: fresh
+        ? mine
+          ? '무작위로 첫 차례가 됐어요 · 카드를 1장 내려놓고, 1장 가져오세요'
+          : '첫 차례를 무작위로 정했어요'
+        : mine
+          ? '카드를 1장 내려놓고, 1장 가져오세요'
+          : (g.turn + 1) % g.players === me
+            ? '다음은 내 차례예요'
+            : '',
       mine,
       k: Date.now(),
     });
     sound.play(mine ? 'myTurn' : 'turn');
-    const t = setTimeout(() => setSplash(null), mine ? 1500 : 1000);
+    const t = setTimeout(() => setSplash(null), fresh ? 2200 : mine ? 1500 : 1000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnKey]);
