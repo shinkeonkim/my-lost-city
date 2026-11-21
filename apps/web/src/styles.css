@@ -1545,3 +1545,35 @@ button.card:focus-visible {
   right: 0;
   top: calc(100% + 6px);
 }
+
+/* 말풍선은 이름 오른쪽에 (위로 띄우면 차례 배너를 가림) */
+.board-head .emote-bubble {
+  left: calc(100% + 10px);
+  bottom: auto;
+  top: -5px;
+}
+.board-head .emote-bubble.big {
+  top: -11px;
+}
+.board-head .emote-bubble::after {
+  left: auto;
+  right: 100%;
+  top: 50%;
+  margin-top: -6px;
+  border-top-color: transparent;
+  border-right-color: #fff;
+}
+/* 로비 목록: 이름 앞에 인라인으로 */
+.name-cell .emote-bubble {
+  position: static;
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+.name-cell .emote-bubble.big {
+  font-size: 1.3rem;
+}
+.name-cell .emote-bubble::after {
+  display: none;
+}
