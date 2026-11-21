@@ -1516,3 +1516,32 @@ button.card:focus-visible {
   box-shadow: var(--shadow);
   animation: bubble 3s ease-out forwards;
 }
+
+/* 덱 + 바로 아래 감정 표현 버튼 */
+.deck-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.deck-col .emote-toggle {
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 0;
+  font-size: 1.05rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(240, 207, 127, 0.45);
+  border-radius: 9px;
+}
+.deck-col .emote-toggle:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+/* 덱 아래에서 열리는 팔레트: 오른쪽 끝에 맞춰 아래로 펼침 */
+.deck-col .emote-wrap {
+  width: 100%;
+}
+.deck-col .emote-palette {
+  right: 0;
+  top: calc(100% + 6px);
+}

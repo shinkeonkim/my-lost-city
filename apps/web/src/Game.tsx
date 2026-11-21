@@ -277,7 +277,6 @@ export function Game({
           <span className="muted"> · {view.code}</span>
         </div>
         <div className="small right">
-          <EmoteButton onSend={onEmote} small />
           <button className="btn ghost tiny" aria-label={muted ? '소리 켜기' : '소리 끄기'} onClick={() => sound.setMuted(!muted)}>
             {muted ? '🔕' : '🔔'}
           </button>
@@ -354,12 +353,16 @@ export function Game({
             />
           ))}
         </div>
-        <button className={`deck ${g.drawable.deck ? 'drawable' : ''}`} onClick={onDeckClick} aria-label={`덱에서 뽑기 (${g.deckCount ?? '?'}장)`}>
-          {(g.deckCount ?? 10) > 2 && <CardBack className="layer l2" />}
-          {(g.deckCount ?? 10) > 1 && <CardBack className="layer l1" />}
-          {!g.deckEmpty && <CardBack ref={deckRef} className="layer l0" />}
-          <span className="deck-count">{g.deckCount ?? '?'}</span>
-        </button>
+        <div className="deck-col">
+          <button className={`deck ${g.drawable.deck ? 'drawable' : ''}`} onClick={onDeckClick} aria-label={`덱에서 뽑기 (${g.deckCount ?? '?'}장)`}>
+            {(g.deckCount ?? 10) > 2 && <CardBack className="layer l2" />}
+            {(g.deckCount ?? 10) > 1 && <CardBack className="layer l1" />}
+            {!g.deckEmpty && <CardBack ref={deckRef} className="layer l0" />}
+            <span className="deck-count">{g.deckCount ?? '?'}</span>
+          </button>
+          {/* 감정 표현: 덱 바로 아래 */}
+          <EmoteButton onSend={onEmote} small />
+        </div>
       </section>
 
       <div className="ticker small muted" aria-live="polite" key={last?.n ?? -1}>
