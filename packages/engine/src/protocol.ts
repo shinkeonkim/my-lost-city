@@ -75,10 +75,25 @@ export const EMOTES = [
   { id: 'hurry', text: '빨리요~ ⏳' },
   { id: 'hmm', text: '고민되네…' },
   { id: 'please', text: '잘 부탁해요!' },
-  { id: 'gg', text: 'GG 👋' },
+  { id: 'gg', text: '줴줴이야 👋' },
+  // 약올리기
+  { id: 'teabag', text: '🍵', anim: 'teabag' },
+  { id: 'clown', text: '🤡' },
+  { id: 'meh', text: '메롱 😜' },
+  { id: 'yawn', text: '하품 나온다 🥱' },
+  { id: 'plan', text: '계획대로 😏' },
+  { id: 'shaking', text: '떨고 있니? 🫵' },
+  { id: 'ez', text: '너무 쉽다~ 💅' },
+  { id: 'thanks', text: '버려줘서 고마워 🙏' },
+  { id: 'yum', text: '그 카드 잘 쓸게~ 😋' },
 ] as const;
 
 export type EmoteId = (typeof EMOTES)[number]['id'];
+/** 말풍선 특수 움직임 (teabag: 위아래로 담갔다 빼기) */
+export const emoteAnim = (id: string): string | null => {
+  const e = EMOTES.find((x) => x.id === id) as { anim?: string } | undefined;
+  return e?.anim ?? null;
+};
 
 export interface EmoteEvent {
   /** 보낸 멤버 id */

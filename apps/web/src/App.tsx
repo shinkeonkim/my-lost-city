@@ -5,6 +5,7 @@ import { call, socket } from './socket';
 import { store } from './storage';
 import { Lobby } from './Lobby';
 import { Game } from './Game';
+import { Home, HomeShell } from './Home';
 import { CardDefs } from './cards';
 
 function useLocation() {
@@ -40,106 +41,6 @@ export function App() {
       <CardDefs />
       {code ? <RoomPage key={code} code={code} onExit={goHome} /> : <Home flash={flash} onEnter={(c) => navigate(`/r/${c}`)} />}
     </>
-  );
-}
-
-function Brand() {
-  return (
-    <div className="brand">
-      <svg width="40" height="40" viewBox="0 0 64 64" aria-hidden>
-        <rect width="64" height="64" rx="14" fill="var(--ink)" />
-        <path d="M14 46 L26 26 L34 36 L42 22 L52 46 Z" fill="var(--sun)" />
-        <circle cx="46" cy="16" r="5" fill="var(--paper)" />
-      </svg>
-      <div>
-        <h1>Expedition Lines</h1>
-        <p className="muted">탐험대를 꾸려 점수를 모으는 2~4인 카드 게임</p>
-      </div>
-    </div>
-  );
-}
-
-function Home({ onEnter, flash }: { onEnter: (code: string) => void; flash: string | null }) {
-  const [name, setName] = useState(store.name());
-  const [password, setPassword] = useState('');
-  const [joinCode, setJoinCode] = useState('');
-  const [error, setError] = useState<string | null>(flash);
-  const [busy, setBusy] = useState(false);
-
-  const create = async () => {
-    if (!name.trim()) return setError('닉네임을 입력하세요');
-    setBusy(true);
-    store.setName(name.trim());
-    const r = await call<{ code: string; token: string }>('create', { name, password: password || undefined });
-    setBusy(false);
-    if (!r.ok) return setError(r.error);
-    store.setToken(r.code, r.token);
-    store.setPassword(r.code, password || null);
-    onEnter(r.code);
-  };
-
-  const join = () => {
-    const c = joinCode.trim().toUpperCase();
-    if (!/^[A-Z0-9]{4}$/.test(c)) return setError('방 코드는 4자리입니다');
-    if (name.trim()) store.setName(name.trim());
-    onEnter(c);
-  };
-
-  return (
-    <main className="page narrow">
-      <Brand />
-      {error && <div className="alert">{error}</div>}
-      <section className="panel">
-        <label className="field">
-          <span>닉네임</span>
-          <input value={name} maxLength={16} onChange={(e) => setName(e.target.value)} placeholder="예: 민지" />
-        </label>
-      </section>
-      <section className="panel">
-        <h2>방 만들기</h2>
-        <label className="field">
-          <span>방 암호 (선택)</span>
-          <input value={password} maxLength={64} onChange={(e) => setPassword(e.target.value)} placeholder="비워두면 누구나 입장" />
-        </label>
-        <button className="btn primary wide" disabled={busy} onClick={create}>
-          방 만들기
-        </button>
-      </section>
-      <section className="panel">
-        <h2>코드로 들어가기</h2>
-        <div className="row">
-          <input
-            className="code-input"
-            value={joinCode}
-            maxLength={4}
-            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === 'Enter' && join()}
-            placeholder="ABCD"
-            autoCapitalize="characters"
-          />
-          <button className="btn" onClick={join}>
-            입장
-          </button>
-        </div>
-        <p className="muted small">QR 코드나 링크로 받았다면 그냥 열면 됩니다.</p>
-      </section>
-      <RulesCard />
-    </main>
-  );
-}
-
-function RulesCard() {
-  return (
-    <details className="panel rules">
-      <summary>규칙 요약</summary>
-      <ul>
-        <li>내 차례엔 <b>카드 1장을 내고</b>(내 탐험대에 놓기 또는 버리기) <b>1장을 뽑습니다</b>(덱 또는 아무 버림 더미 맨 위).</li>
-        <li>탐험대(색별 열)에는 <b>이전보다 큰 숫자만</b> 놓을 수 있습니다. 투자 카드는 숫자보다 먼저만 놓을 수 있습니다.</li>
-        <li>방금 버린 카드는 같은 턴에 다시 가져올 수 없습니다.</li>
-        <li>덱의 마지막 장을 뽑으면 판이 끝납니다.</li>
-        <li>점수: 시작한 탐험대마다 <b>(숫자 합 − 비용) × (투자 장수 + 1)</b>, 카드가 기준 장수 이상이면 보너스.</li>
-      </ul>
-    </details>
   );
 }
 
@@ -302,11 +203,9 @@ function JoinForm({
   };
 
   return (
-    <main className="page narrow">
-      <Brand />
-      <section className="panel">
-        <h2>
-          방 <span className="code">{code}</span> 입장
+    <HomeShell>
+        <h2 className="home-card-title">
+          방 <span className="code">{code}</span>에 초대받았어요
         </h2>
         {phase.inGame && <p className="muted small">이미 게임이 진행 중이라 관전자로 들어갑니다.</p>}
         {error && <div className="alert">{error}</div>}
@@ -321,7 +220,7 @@ function JoinForm({
           </label>
         )}
         <div className="row">
-          <button className="btn primary grow" disabled={busy} onClick={() => submit()}>
+          <button className="btn primary grow big-btn" disabled={busy} onClick={() => submit()}>
             입장
           </button>
           {!phase.inGame && (
@@ -333,7 +232,6 @@ function JoinForm({
         <button className="btn ghost wide" onClick={onCancel}>
           처음으로
         </button>
-      </section>
-    </main>
+    </HomeShell>
   );
 }

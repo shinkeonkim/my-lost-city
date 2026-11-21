@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { EmoteEvent, GameConfig, LIMITS, PRESETS, RoomView, autoCost } from '@el/engine';
 import { store } from './storage';
 import { EmoteBubble, EmoteButton, EmoteFeed } from './emotes';
+import { GuideButton } from './Guide';
 import { Glyph, SUITS, suitVars } from './theme';
 
 type Act = (event: string, payload?: object) => Promise<boolean>;
@@ -51,6 +52,7 @@ export function Lobby({
           <div className="code big">{view.code}</div>
         </div>
         <div className="row tight">
+          <GuideButton />
           <EmoteButton onSend={onEmote} />
           {isHost && <CloseRoomButton act={act} />}
           <button className="btn ghost" onClick={onLeave}>

@@ -6,6 +6,7 @@ import { hasOrigin, setOrigin } from './flip';
 import { CloseRoomButton, StopGameButton } from './Lobby';
 import { EmoteBubble, EmoteButton, EmoteFeed } from './emotes';
 import { sound } from './sound';
+import { GuideButton } from './Guide';
 
 type Act = (event: string, payload?: object) => Promise<boolean>;
 
@@ -276,6 +277,7 @@ export function Game({
   const last = g.log[g.log.length - 1];
   const freshId = last && last.card && last.move.type !== 'draw' ? last.card.id : null;
   const isTeam = c.teams && g.players === 4;
+  const deckLow = g.deckCount !== null && g.deckCount > 0 && g.deckCount <= g.players * 2;
 
   return (
     <main className={`page game ${myTurn ? 'my-turn' : ''}`} style={{ ['--cols' as string]: c.colors }}>
@@ -292,6 +294,7 @@ export function Game({
           </button>
           {view.hostId === view.you && g.status !== 'match-over' && <StopGameButton act={act} small />}
           {view.hostId === view.you && <CloseRoomButton act={act} small />}
+          <GuideButton className="btn ghost tiny" label="규칙" />
           <button className="btn ghost tiny" onClick={() => setShowLog((v) => !v)}>
             기록
           </button>
@@ -319,6 +322,19 @@ export function Game({
         </div>
       )}
 
+      {g.status === 'playing' && deckLow && (
+        <div className={`side-alert ${g.deckCount! <= g.players ? 'critical' : ''}`} role="status" key={g.deckCount}>
+          <span className="sa-icon" aria-hidden>
+            ⏳
+          </span>
+          <span>
+            <b>덱 {g.deckCount}장 남음</b> · 마지막 장을 가져가면 판이 끝나요
+            {g.deckCount! <= g.players && <span className="sa-sub">이번 바퀴 안에 끝날 수 있어요 — 버림 더미에서 가져오면 시간을 벌 수 있어요</span>}
+          </span>
+        </div>
+      )}
+
+      <div className="game-scroll">
       <section className="opponents">
         {others.map((p) => (
           <PlayerBoard
@@ -381,7 +397,6 @@ export function Game({
       </div>
 
       {me >= 0 && (
-        <>
           <PlayerBoard
             ref={(el) => {
               if (el) boards.set(me, el);
@@ -399,7 +414,11 @@ export function Game({
             dragOver={drag?.over ?? null}
             freshId={freshId}
           />
+      )}
+      </div>
 
+      {me >= 0 && (
+        <>
           <section className="hand-area">
             <div className="actions">
               {myTurn && g.phase === 'play' && selCard ? (
@@ -510,7 +529,6 @@ function TurnBanner({
     if (g.me >= 0 && (g.turn + 1) % g.players === g.me) hint += ' · 다음은 내 차례예요'
     if (g.me < 0) hint += ' · 관전 중';
   }
-  const deckLow = g.deckCount !== null && g.deckCount > 0 && g.deckCount <= g.players * 2;
   return (
     <section className={`turn-banner ${myTurn ? 'mine' : 'theirs'} ${away ? 'away' : ''}`} aria-live="polite">
       <div className={`tb-body ${shake ? 'shake' : ''}`} key={`${shake}-${g.turn}-${g.phase}`}>
@@ -533,7 +551,6 @@ function TurnBanner({
           )}
         </div>
       </div>
-      {deckLow && <div className="tb-deck-low">덱 {g.deckCount}장 남음 · 덱이 바닥나면 판이 끝나요</div>}
     </section>
   );
 }

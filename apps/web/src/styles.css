@@ -27,6 +27,13 @@
   --card-w: 58px;
   --card-sm-w: 40px;
   --card-xs-w: 26px;
+  /* 첫 화면·게임 방법 공용 이름 (Crown March와 같은 스타일 공유) */
+  --gold: var(--sun);
+  --gold-ink: var(--sun-ink);
+  --s2: var(--sea);
+  --board: #eadfca;
+  --board-line: #cdbb98;
+  --board-edge: #8a6b3d;
   color-scheme: light;
 }
 
@@ -1592,4 +1599,790 @@ button.card:focus-visible {
 }
 .paused-score {
   white-space: nowrap;
+}
+
+/* 약올리기 이모트: 🍵 티배깅 — 위아래로 담갔다 뺐다 */
+.emote-inner {
+  display: inline-block;
+}
+.emote-bubble.anim-teabag .emote-inner {
+  animation: teabag 0.32s ease-in-out 8 alternate;
+}
+@keyframes teabag {
+  from {
+    transform: translateY(-5px);
+  }
+  to {
+    transform: translateY(7px) scaleY(0.88);
+  }
+}
+.emote-palette {
+  max-height: min(340px, 60dvh);
+  overflow-y: auto;
+}
+
+/* ---------- 첫 화면 ---------- */
+.home {
+  min-height: 100dvh;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 16px calc(28px + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 22px;
+  align-content: center;
+}
+@media (min-width: 860px) {
+  .home {
+    grid-template-columns: minmax(0, 1.15fr) minmax(340px, 400px);
+    align-items: center;
+    gap: 48px;
+    padding: 32px 28px;
+  }
+}
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.home-hero .brand {
+  margin: 0;
+}
+.home-hero .brand h1 {
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.brand.small h1 {
+  font-size: 1.2rem;
+}
+.home-lead {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--ink) 86%, var(--bg));
+}
+.home-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.home-chips li {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+.guide-cta {
+  align-self: flex-start;
+  border: 1.5px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, var(--panel));
+}
+.home-card {
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 18px 40px rgba(20, 12, 0, 0.18);
+}
+.home-card-title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.name-input {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.name-input input {
+  flex: 1;
+}
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+.seg button {
+  border: none;
+  background: none;
+  padding: 9px;
+  border-radius: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.seg button.on {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.seg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.big-btn {
+  padding: 13px 16px;
+  font-size: 1.02rem;
+}
+.code-input.big {
+  font-size: 1.8rem;
+  padding: 10px;
+}
+
+/* ---------- 게임 방법 모달 ---------- */
+.g-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(10, 8, 4, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  animation: fade-in 0.2s ease-out;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.g-sheet {
+  width: min(820px, 100%);
+  height: min(860px, calc(100dvh - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  animation: sheet-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (max-width: 600px) {
+  .g-overlay {
+    padding: 0;
+  }
+  .g-sheet {
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+}
+.g-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px 10px;
+}
+.g-title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.g-title h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.g-close {
+  width: 36px;
+  height: 36px;
+  font-size: 1rem;
+}
+.g-nav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 18px 12px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+  flex: none;
+}
+.g-nav .chip {
+  white-space: nowrap;
+  flex: none;
+}
+.g-num {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--line);
+  font-size: 0.7rem;
+  margin-right: 2px;
+}
+.chip.on .g-num {
+  background: var(--gold);
+  color: var(--gold-ink);
+}
+.g-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 22px 40px;
+  line-height: 1.65;
+}
+.g-body section {
+  padding: 18px 0 22px;
+  border-bottom: 1px dashed var(--line);
+  scroll-margin-top: 8px;
+}
+.g-body section:last-child {
+  border-bottom: none;
+}
+.g-body h3 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+}
+.g-body p {
+  margin: 0 0 12px;
+}
+.g-row {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.g-row.center {
+  justify-content: center;
+}
+.g-note {
+  flex: 1;
+  min-width: 200px;
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+.g-note > * + * {
+  margin-top: 6px;
+}
+.g-note .move-card {
+  float: left;
+  margin: 0 12px 6px 0;
+}
+@media (max-width: 600px) {
+  .g-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .g-row .g-board {
+    align-self: center;
+    width: min(62vw, 220px);
+  }
+  .g-note {
+    min-width: 0;
+  }
+}
+.g-note .stone-svg {
+  vertical-align: -4px;
+}
+.g-board {
+  position: relative;
+  flex: none;
+  width: 190px;
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--n), 1fr);
+  grid-template-rows: repeat(var(--n), 1fr);
+  gap: 1px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--board-line);
+  border: 3px solid var(--board-edge);
+}
+.g-cell {
+  position: relative;
+  background: var(--board);
+  display: grid;
+  place-items: center;
+}
+.g-cell.hole {
+  background: repeating-linear-gradient(45deg, #b8322f 0 4px, #7a1c1b 4px 8px);
+}
+.g-cell.m-ok {
+  box-shadow: inset 0 0 0 3px var(--gold);
+  background: color-mix(in srgb, var(--gold) 30%, var(--board));
+}
+.g-cell.m-no {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+.g-cell.m-hero {
+  box-shadow: inset 0 0 0 3px var(--danger);
+}
+.g-x {
+  position: absolute;
+  color: var(--danger);
+  font-weight: 900;
+  font-size: 1.1rem;
+  text-shadow: 0 0 3px #fff;
+}
+.g-k {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  color: var(--danger);
+}
+.g-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 3px #000, 0 0 2px #000;
+}
+.g-arrow {
+  position: absolute;
+  inset: 5px;
+  width: calc(100% - 10px);
+  height: calc(100% - 10px);
+  pointer-events: none;
+}
+.g-arrow line {
+  stroke: var(--gold);
+  stroke-width: 0.1;
+  stroke-dasharray: 0.2 0.12;
+  stroke-linecap: round;
+}
+.g-arrow circle {
+  fill: var(--gold);
+}
+.g-crown {
+  position: absolute;
+  width: calc((100% - 10px) / var(--n) * 0.62);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  margin: 2px 0 0 2px;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.4));
+}
+.g-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+.g-part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.g-part b {
+  font-size: 0.98rem;
+}
+.g-part-art {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 64px;
+}
+.g-knight {
+  color: var(--danger);
+}
+.g-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.g-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 220px;
+}
+.g-inline-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  vertical-align: -3px;
+}
+.g-clip {
+  margin: 14px 0 6px;
+}
+.g-clip video {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #000;
+}
+.g-clip figcaption {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 6px;
+  text-align: center;
+}
+.g-table {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.g-table > div {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+.g-table span {
+  color: var(--muted);
+}
+
+/* 첫 화면: "새 방 만들기"와 "초대받은 방 들어가기"를 확실히 구분 */
+.home-step {
+  margin: -6px 0 0;
+}
+.entry-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 2px solid;
+}
+.entry.create {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 12%, var(--panel));
+}
+.entry.join {
+  border-color: var(--s2);
+  background: color-mix(in srgb, var(--s2) 10%, var(--panel));
+}
+.entry-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.entry-icon {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.entry h3 {
+  margin: 0 0 2px;
+  font-size: 1.05rem;
+}
+.entry p {
+  margin: 0;
+  font-size: 0.83rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.entry-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 10px 0;
+}
+.entry-or::before,
+.entry-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.btn.join-btn {
+  background: var(--s2);
+  border-color: var(--s2);
+  color: #fff;
+}
+.btn.join-btn:disabled {
+  opacity: 0.45;
+}
+.entry .code-input.big {
+  min-width: 0;
+  font-size: 1.4rem;
+}
+
+
+/* 첫 화면 시연: 탐험대 줄에 카드가 차례로 쌓임 */
+.demo-board {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 14px 30px rgba(40, 25, 5, 0.15);
+  width: fit-content;
+  min-height: 250px;
+}
+@media (max-width: 859px) {
+  .demo-board {
+    align-self: center;
+    min-height: 200px;
+  }
+}
+.demo-col {
+  position: relative;
+  width: var(--card-sm-w);
+  border-radius: 8px;
+  border: 2px dashed color-mix(in srgb, var(--suit) 60%, transparent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0;
+  min-height: 200px;
+}
+.demo-empty {
+  position: absolute;
+  top: 8px;
+  color: var(--suit);
+  opacity: 0.6;
+}
+.demo-card {
+  position: relative;
+  animation: demo-drop 0.45s cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.demo-card + .demo-card {
+  margin-top: -40px;
+}
+@keyframes demo-drop {
+  from {
+    transform: translateY(-30px) rotate(-8deg);
+    opacity: 0;
+  }
+}
+/* 게임 방법: 탐험대 줄 그림 */
+.g-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.g-col-cards {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.g-col-card {
+  position: relative;
+}
+.g-col-card.bad .card {
+  opacity: 0.55;
+  outline: 3px solid var(--danger);
+  outline-offset: 1px;
+}
+.g-col-card .g-x {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.6rem;
+}
+.g-col-note {
+  font-size: 0.88rem;
+}
+.g-total {
+  font-size: 1.02rem;
+}
+.g-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.g-suit {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--suit);
+  color: var(--suit-ink);
+}
+.g-logo {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--sun);
+}
+
+/* 눈에 띄는 경고: 덱이 얼마 안 남음 (Crown March의 '남은 돌' 경고와 같은 모양) */
+.side-alert {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--gold) 22%, var(--panel));
+  border: 2px solid var(--gold);
+  font-size: 0.92rem;
+  animation: alert-in 0.4s ease-out;
+}
+.side-alert b {
+  font-size: 1.02rem;
+}
+.side-alert .sa-icon {
+  font-size: 1.4rem;
+}
+.side-alert .sa-sub {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+.side-alert.critical {
+  background: color-mix(in srgb, var(--danger) 22%, var(--panel));
+  border-color: var(--danger);
+  animation: alert-in 0.4s ease-out, alert-pulse 1.6s ease-in-out 0.4s infinite;
+}
+@keyframes alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+@keyframes alert-pulse {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 35%, transparent);
+  }
+}
+
+/* ---------- 게임 화면 레이아웃: 기기 화면에 고정 (Crown March와 같은 원칙) ----------
+   위(상단 바·차례 배너·경고)와 아래(손패)는 고정, 가운데(상대 보드·탁자·내 탐험대)만 스크롤 */
+.page.game {
+  max-width: 1240px;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 8px 16px 0;
+}
+.game > .topbar.compact,
+.game > .turn-banner,
+.game > .side-alert,
+.game > .log {
+  position: static;
+  flex: none;
+}
+.game > .topbar.compact {
+  margin-bottom: 6px;
+  padding: 0;
+}
+.game > .turn-banner {
+  margin-bottom: 8px;
+}
+.game > .side-alert {
+  margin-bottom: 8px;
+}
+.game > .log {
+  max-height: 22dvh;
+  margin-bottom: 8px;
+}
+.game-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 2px 2px 8px;
+}
+.game .ticker {
+  margin: 10px 0 12px;
+  padding: 0 8px;
+}
+.game > .hand-area {
+  position: static;
+  flex: none;
+  margin-top: 0;
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+/* 넓은 가로 화면: 왼쪽 상대들, 오른쪽 탁자와 내 탐험대 — 각 열이 따로 스크롤 */
+@media (min-width: 1100px) and (min-aspect-ratio: 5/4) {
+  .game-scroll {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    grid-template-rows: auto auto 1fr;
+    column-gap: 18px;
+    align-content: start;
+  }
+  .game-scroll > .opponents {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    grid-template-columns: 1fr;
+    align-content: start;
+  }
+  .game-scroll > :not(.opponents) {
+    grid-column: 2;
+  }
+  .game-scroll > .table {
+    margin-top: 0;
+  }
+}
+@media (min-width: 1100px) and (min-aspect-ratio: 5/4) {
+  .game-scroll > * {
+    align-self: start;
+  }
+}
+/* 부채꼴 손패가 화면 아래에서 잘리지 않게 */
+.game > .hand-area {
+  padding-bottom: calc(18px + env(safe-area-inset-bottom));
+}
+/* 가로로 눕힌 휴대폰처럼 높이가 아주 낮을 때: 위쪽 줄과 경고를 압축 */
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  .page.game {
+    padding-top: 4px;
+  }
+  .game > .topbar.compact {
+    margin-bottom: 4px;
+  }
+  .game .tb-hint,
+  .game .side-alert .sa-sub {
+    display: none;
+  }
+  .game > .side-alert {
+    padding: 4px 10px;
+    font-size: 0.82rem;
+  }
+  .game > .hand-area {
+    padding-top: 2px;
+    padding-bottom: 8px;
+  }
+  .game > .hand-area .actions {
+    min-height: 0;
+  }
 }
