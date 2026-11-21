@@ -42,6 +42,9 @@ export interface RoomView {
 }
 
 /** 방 안에서 보낼 수 있는 감정 표현 (서버는 이 목록의 id만 허용) */
+/** 무중단 배포로 서버를 교체하는 동안의 안내 (클라이언트는 이 오류면 잠시 뒤 다시 시도) */
+export const DRAIN_MESSAGE = '서버를 업데이트하는 중이에요 — 잠시 뒤 자동으로 이어져요';
+
 export interface PausedInfo {
   /** 중지 당시 판 (1부터) / 전체 판 수 */
   round: number;

@@ -4,10 +4,15 @@ metadata:
   name: my-lost-city
 spec:
   # 방/게임 상태를 메모리에 들고 있으므로 반드시 1개. 파드가 2개면 방이 둘로 갈라진다.
-  # 그래서 배포 시에도 Recreate — 재배포하면 진행 중인 게임은 사라진다(새로고침하면 방을 다시 만들어야 함).
+  # 무중단 배포: 새 파드를 먼저 띄우고(maxSurge 1), 새 파드는 my-lost-city-handoff Service(= 준비된 이전 파드)에서
+  # 방 상태를 받아온 뒤에야 Ready가 된다. 이전 파드는 넘겨준 순간 Ready를 내려놓고(진행 요청은 잠깐 거절),
+  # SIGTERM에 연결을 끊어 클라이언트가 새 파드로 자동 재접속한다. 그래서 준비된 파드는 언제나 최대 1개다.
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels: &labels
       app.kubernetes.io/name: my-lost-city
@@ -15,6 +20,7 @@ spec:
     metadata:
       labels: *labels
     spec:
+      terminationGracePeriodSeconds: 15
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -27,14 +33,20 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            - name: handoff # 내부 전용 (무중단 배포 시 방 상태 넘겨주기)
+              containerPort: 9090
           env:
             # QR/공유 링크에 쓰는 주소 (Cloudflare Tunnel Public Hostname과 맞출 것)
             - { name: PUBLIC_URL, value: "https://my-lost-city.shinkeonkim.com" }
             - { name: MAX_ROOMS, value: "5" } # 동시에 열 수 있는 방 개수
             - { name: ROOM_IDLE_MINUTES, value: "60" } # 모두 나간 뒤 이 시간 동안 유휴면 방 해제
+            - { name: HANDOFF_PORT, value: "9090" }
+            - { name: HANDOFF_PEER, value: "http://my-lost-city-handoff:9090" }
+          # Ready = 방 상태를 넘겨받았고 아직 넘겨주지 않음. 짧은 주기로 봐서 교체 공백을 줄인다
           readinessProbe:
-            httpGet: { path: /healthz, port: http }
-            periodSeconds: 5
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 1
+            failureThreshold: 1
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 30

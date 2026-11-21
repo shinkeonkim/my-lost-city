@@ -286,4 +286,33 @@ describe('Rooms', () => {
     expect(room.paused).toBeNull();
     expect(room.match!.round).toBe(0);
   });
+
+  it('무중단 배포: 방을 내보내고 다른 인스턴스에서 그대로 복원', () => {
+    const { rooms, room, host, others } = lobby(2, 'pw');
+    rooms.setConfig(room, host, { turnTimerSec: 60 });
+    rooms.start(room, host);
+    const m = room.match!;
+    rooms.move(room, room.members.find((x) => x.seat === m.state.turn)!, autoMove(m));
+    const json = JSON.parse(JSON.stringify(rooms.exportState()));
+    rooms.freezeTimers();
+    expect(room.timer).toBeNull();
+
+    const next = new Rooms();
+    expect(next.importState(json)).toBe(1);
+    const r2 = next.get(room.code);
+    expect(r2.match).toEqual(m);
+    expect(r2.turnDeadline).not.toBeNull();
+    // 토큰으로 재접속, 암호도 유지
+    const back = next.join(room.code, { name: 'x', token: others[0].token });
+    expect(back.member.seat).toBe(others[0].seat);
+    expect(() => next.join(room.code, { name: 'new', password: 'nope' })).toThrow(RoomError);
+    next.join(room.code, { name: 'new', password: 'pw' });
+    // 이어서 진행 가능
+    const cur = r2.members.find((x) => x.seat === r2.match!.state.turn)!;
+    next.connect(r2, cur);
+    next.move(r2, cur, autoMove(r2.match!));
+    expect(next.importState(json)).toBe(0); // 이미 있는 방은 덮어쓰지 않음
+    next.remove(r2);
+    rooms.remove(room);
+  });
 });

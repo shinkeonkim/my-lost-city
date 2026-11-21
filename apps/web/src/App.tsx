@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { EmoteEvent, RoomView } from '@el/engine';
+import { DRAIN_MESSAGE } from '@el/engine';
 import { call, socket } from './socket';
 import { store } from './storage';
 import { Lobby } from './Lobby';
@@ -206,7 +207,12 @@ function RoomPage({ code, onExit }: { code: string; onExit: (msg?: string) => vo
     const onErr = (m: string) => setToast(m);
     const onReconnect = async () => {
       if (!store.token(code)) return;
-      const err = await enter({ name: store.name() });
+      let err = await enter({ name: store.name() });
+      // 무중단 배포 중이면 새 서버로 넘어갈 때까지 잠깐 기다렸다 다시
+      for (let i = 0; err === DRAIN_MESSAGE && i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        err = await enter({ name: store.name() });
+      }
       // 서버 재시작 등으로 방이 사라졌으면 멈춘 화면에 남지 말고 처음으로
       if (err) {
         store.setToken(code, null);

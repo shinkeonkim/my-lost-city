@@ -3,11 +3,23 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
 import { Server, Socket } from 'socket.io';
-import { Member, Room, RoomError, Rooms, normalizeCode } from './rooms';
+import { DRAIN_MESSAGE } from '@el/engine';
+import { Member, Room, RoomError, RoomSnapshot, Rooms, normalizeCode } from './rooms';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const STATIC_DIR = resolve(process.env.STATIC_DIR ?? join(process.cwd(), 'apps/web/dist'));
 const PUBLIC_URL = process.env.PUBLIC_URL || null;
+
+// ---- 무중단 배포 (방 상태 넘겨주기) ----
+// 새 파드는 시작할 때 HANDOFF_PEER(준비된 파드만 가리키는 내부 Service = 이전 파드)에서 방 상태를 받아온 뒤에야 준비 완료가 된다.
+// 이전 파드는 넘겨준 순간부터 게임 진행 요청을 잠시 막고(draining), SIGTERM을 받으면 연결을 끊어 클라이언트가 새 파드로 재접속하게 한다.
+const HANDOFF_PORT = Number(process.env.HANDOFF_PORT ?? 0);
+const HANDOFF_PEER = process.env.HANDOFF_PEER || null;
+const HANDOFF_SECRET = process.env.HANDOFF_SECRET || '';
+const DRAIN_MSG = DRAIN_MESSAGE;
+let ready = false;
+let draining = false;
+let shuttingDown = false;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -36,6 +48,11 @@ function serveStatic(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x');
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+    return;
+  }
+  if (url.pathname === '/readyz') {
+    const ok = ready && !draining;
+    res.writeHead(ok ? 200 : 503, { 'content-type': 'text/plain' }).end(ok ? 'ready' : draining ? 'draining' : 'starting');
     return;
   }
   if (url.pathname === '/api/info') {
@@ -85,9 +102,11 @@ function broadcast(room: Room) {
 
 type Ack = (r: { ok: true; [k: string]: unknown } | { ok: false; error: string }) => void;
 
-function handler<T>(socket: Socket, fn: (payload: T) => Record<string, unknown> | void) {
+/** readOnly가 아니면 상태를 바꾸는 요청 — 배포로 방을 넘기는 중에는 막는다 */
+function handler<T>(socket: Socket, fn: (payload: T) => Record<string, unknown> | void, readOnly = false) {
   return (payload: T, ack?: Ack) => {
     try {
+      if (draining && !readOnly) throw new RoomError(DRAIN_MSG);
       const r = fn(payload ?? ({} as T));
       if (typeof ack === 'function') ack({ ok: true, ...(r ?? {}) });
     } catch (e) {
@@ -151,6 +170,11 @@ io.on('connection', (socket) => {
       const now = Date.now();
       data.failedJoins = data.failedJoins.filter((t) => now - t < 60_000);
       if (data.failedJoins.length >= 10) throw new RoomError('시도가 너무 많습니다. 잠시 후 다시 시도하세요');
+      if (draining) {
+        // 교체 중에는 기존 참가자의 재접속만 받는다 (상태가 바뀌지 않음)
+        const known = typeof p.token === 'string' && rooms.rooms.get(normalizeCode(p.code))?.members.some((m) => m.token === p.token);
+        if (!known) throw new RoomError(DRAIN_MSG);
+      }
       try {
         const { room, member } = rooms.join(normalizeCode(p.code), {
           name: p.name,
@@ -165,7 +189,7 @@ io.on('connection', (socket) => {
         data.failedJoins.push(now);
         throw e;
       }
-    }),
+    }, true),
   );
 
   /** 입장 전에 방 존재/암호 여부 확인 */
@@ -179,7 +203,7 @@ io.on('connection', (socket) => {
         inGame: !!room.match,
         players: room.members.filter((m) => m.role === 'player').length,
       };
-    }),
+    }, true),
   );
 
   const act = <T>(name: string, fn: (room: Room, member: Member, p: T) => void) =>
@@ -214,7 +238,7 @@ io.on('connection', (socket) => {
     handler<{ id: string }>(socket, (p) => {
       const { room, member } = current(socket);
       io.to(`r:${room.code}`).emit('emote', rooms.emote(room, member, p.id));
-    }),
+    }, true),
   );
 
   socket.on(
@@ -236,4 +260,53 @@ setInterval(() => rooms.sweep(), 60_000).unref();
 
 http.listen(PORT, () => {
   console.log(`server listening on :${PORT} (static: ${STATIC_DIR})`);
+  takeOver().finally(() => {
+    ready = true;
+  });
+});
+
+/** 이전 파드에게서 방 상태를 받아온다. 이전 파드가 없거나(첫 배포·재시작) 응답이 없으면 빈 상태로 시작 */
+async function takeOver() {
+  if (!HANDOFF_PEER) return;
+  try {
+    const r = await fetch(`${HANDOFF_PEER.replace(/\/$/, '')}/handoff`, {
+      method: 'POST',
+      headers: HANDOFF_SECRET ? { 'x-handoff-secret': HANDOFF_SECRET } : {},
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const body = (await r.json()) as { rooms: RoomSnapshot[] };
+    console.log(`handoff: 이전 파드에서 방 ${rooms.importState(body.rooms)}개를 넘겨받음`);
+  } catch (e) {
+    console.log(`handoff: 넘겨받을 이전 파드 없음 (${e instanceof Error ? e.message : e})`);
+  }
+}
+
+// 내부 전용 포트 (Service my-lost-city-handoff, 네트워크 정책으로 같은 네임스페이스만 허용)
+if (HANDOFF_PORT) {
+  createServer((req, res) => {
+    if (req.method !== 'POST' || req.url !== '/handoff') return void res.writeHead(404).end();
+    if (HANDOFF_SECRET && req.headers['x-handoff-secret'] !== HANDOFF_SECRET) return void res.writeHead(403).end();
+    draining = true;
+    rooms.freezeTimers();
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ rooms: rooms.exportState() }));
+    console.log(`handoff: 방 ${rooms.rooms.size}개를 새 파드로 넘김 — 종료 대기`);
+    // 보통은 곧 SIGTERM이 온다. 새 파드가 뜨지 못해 안 오면 다시 진행을 받는다
+    setTimeout(() => {
+      if (shuttingDown) return;
+      draining = false;
+      rooms.resumeTimers();
+      console.log('handoff: 종료되지 않아 다시 진행을 받음');
+    }, 60_000).unref();
+  }).listen(HANDOFF_PORT, () => console.log(`handoff listening on :${HANDOFF_PORT}`));
+}
+
+process.on('SIGTERM', () => {
+  shuttingDown = true;
+  draining = true;
+  console.log('SIGTERM: 연결을 끊고 종료 (클라이언트는 새 파드로 자동 재접속)');
+  // 서버가 socket.disconnect()하면 클라이언트가 재접속하지 않으므로 전송 계층을 닫는다
+  io.engine.close();
+  http.close();
+  setTimeout(() => process.exit(0), 1000).unref();
 });

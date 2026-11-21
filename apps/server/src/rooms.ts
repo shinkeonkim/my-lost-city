@@ -66,6 +66,19 @@ export interface Room {
 
 export class RoomError extends Error {}
 
+export interface RoomSnapshot {
+  code: string;
+  password: { salt: string; hash: string } | null;
+  hostId: string;
+  config: GameConfig;
+  members: Pick<Member, 'id' | 'token' | 'name' | 'role' | 'seat' | 'backInLobby'>[];
+  match: MatchState | null;
+  paused: Room['paused'];
+  turnRemainingMs: number | null;
+  idleMs: number;
+  failedPasswords: number[];
+}
+
 /** 로비 조작(설정·인원·시작)이 가능한 상태: 게임이 없거나 매치가 끝난 뒤 */
 function lobbyOpen(room: Room): boolean {
   return !room.match || room.match.status === 'match-over';
@@ -416,17 +429,70 @@ export class Rooms {
     this.touch(room);
   }
 
-  private resetTimer(room: Room) {
+  /** ms: 남은 시간을 직접 지정 (무중단 배포로 넘겨받은 방) */
+  private resetTimer(room: Room, ms?: number) {
     this.clearTimer(room);
     const sec = room.match?.config.turnTimerSec ?? 0;
     if (!room.match || room.match.status !== 'playing' || sec <= 0) return;
-    room.turnDeadline = Date.now() + sec * 1000;
+    const wait = Math.max(0, ms ?? sec * 1000);
+    room.turnDeadline = Date.now() + wait;
     room.timer = setTimeout(() => {
       room.timer = null;
       this.timeout(room);
       this.onChange(room);
-    }, sec * 1000);
+    }, wait);
     room.timer.unref?.();
+  }
+
+  /** 무중단 배포로 넘긴 뒤: 이 파드에서 턴 타이머가 더 돌지 않게 멈춤 */
+  freezeTimers() {
+    for (const room of this.rooms.values()) this.clearTimer(room);
+  }
+
+  /** 넘기기가 무산됐을 때(새 파드 실패) 다시 타이머를 돌림 */
+  resumeTimers() {
+    for (const room of this.rooms.values()) this.resetTimer(room);
+  }
+
+  /** 무중단 배포: 모든 방을 JSON으로 (새 파드가 넘겨받는다) */
+  exportState(now = Date.now()): RoomSnapshot[] {
+    return [...this.rooms.values()].map((r) => ({
+      code: r.code,
+      password: r.password && { salt: r.password.salt.toString('base64'), hash: r.password.hash.toString('base64') },
+      hostId: r.hostId,
+      config: r.config,
+      members: r.members.map((m) => ({ id: m.id, token: m.token, name: m.name, role: m.role, seat: m.seat, backInLobby: m.backInLobby })),
+      match: r.match,
+      paused: r.paused,
+      turnRemainingMs: r.turnDeadline ? Math.max(0, r.turnDeadline - now) : null,
+      idleMs: now - r.lastActive,
+      failedPasswords: r.failedPasswords.map((t) => now - t),
+    }));
+  }
+
+  /** 넘겨받은 방 복원. 모두 '끊김' 상태로 시작하고, 클라이언트가 토큰으로 다시 붙으면 이어진다 */
+  importState(snapshots: RoomSnapshot[], now = Date.now()): number {
+    let n = 0;
+    for (const s of snapshots) {
+      if (this.rooms.has(s.code)) continue;
+      const room: Room = {
+        code: s.code,
+        password: s.password && { salt: Buffer.from(s.password.salt, 'base64'), hash: Buffer.from(s.password.hash, 'base64') },
+        hostId: s.hostId,
+        config: s.config,
+        members: s.members.map((m) => ({ ...m, connections: 0, disconnectedAt: now, emoteTimes: [] })),
+        match: s.match,
+        paused: s.paused ?? null,
+        turnDeadline: null,
+        timer: null,
+        lastActive: now - s.idleMs,
+        failedPasswords: s.failedPasswords.map((ago) => now - ago),
+      };
+      this.rooms.set(room.code, room);
+      if (s.turnRemainingMs !== null) this.resetTimer(room, s.turnRemainingMs);
+      n++;
+    }
+    return n;
   }
 
   private clearTimer(room: Room) {
