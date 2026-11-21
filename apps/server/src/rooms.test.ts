@@ -218,4 +218,72 @@ describe('Rooms', () => {
     expect(changed).toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it('방장이 게임 중지 → 같은 설정이면 하던 판 그대로 이어서', () => {
+    const { rooms, room, host, others } = lobby(3);
+    rooms.start(room, host);
+    const m = room.match!;
+    rooms.move(room, room.members.find((x) => x.seat === m.state.turn)!, autoMove(m));
+    const snapshot = JSON.stringify(m.state);
+    expect(() => rooms.stop(room, others[0])).toThrow(RoomError);
+    rooms.stop(room, host);
+    expect(room.match).toBeNull();
+    expect(rooms.view(room, others[0]).game).toBeNull();
+    expect(rooms.view(room, others[0]).lobby.paused).toMatchObject({ round: 1, sameConfig: true, blocked: null });
+    expect(() => rooms.move(room, others[0], autoMove(m))).toThrow(RoomError);
+    expect(() => rooms.resume(room, others[0])).toThrow(RoomError);
+    rooms.resume(room, host);
+    expect(room.match).toBe(m);
+    expect(JSON.stringify(room.match!.state)).toBe(snapshot);
+    expect(room.paused).toBeNull();
+  });
+
+  it('중지 후 설정을 바꿔 이어가면 끝난 판 점수는 유지하고 새 설정으로 다음 판', () => {
+    const { rooms, room, host, others } = lobby(2);
+    rooms.setConfig(room, host, { rounds: 2 });
+    rooms.start(room, host);
+    const m = room.match!;
+    let guard = 0;
+    while (m.status === 'playing' && guard++ < 500) rooms.move(room, room.members.find((x) => x.seat === m.state.turn)!, autoMove(m));
+    expect(m.status).toBe('round-over');
+    const firstRound = [...m.roundScores[0]];
+    rooms.stop(room, host);
+    // 판 수를 그대로 두고 색만 줄이면 2판째로 이어감
+    rooms.setConfig(room, host, { colors: 4 });
+    expect(rooms.view(room, host).lobby.paused).toMatchObject({ sameConfig: false, blocked: null, roundOver: true });
+    rooms.resume(room, host);
+    const n = room.match!;
+    expect(n).not.toBe(m);
+    expect(n.config.colors).toBe(4);
+    expect(n.round).toBe(1);
+    expect(n.roundScores).toEqual([firstRound]);
+    expect(n.state.expeditions[0]).toHaveLength(4);
+    expect(others[0].seat).not.toBeNull();
+  });
+
+  it('중지 후 판 수가 모자라거나 플레이어가 바뀌면 이어갈 수 없고 새 게임은 가능', () => {
+    const { rooms, room, host, others } = lobby(2);
+    rooms.setConfig(room, host, { rounds: 1 });
+    rooms.start(room, host);
+    const m = room.match!;
+    let guard = 0;
+    while (m.status === 'playing' && guard++ < 500) rooms.move(room, room.members.find((x) => x.seat === m.state.turn)!, autoMove(m));
+    // 1판짜리는 끝나면 match-over → 중지 대상 아님
+    expect(() => rooms.stop(room, host)).toThrow(RoomError);
+    rooms.back(room, host);
+    rooms.back(room, others[0]);
+    rooms.setConfig(room, host, { rounds: 3 });
+    rooms.start(room, host);
+    rooms.stop(room, host);
+    rooms.setConfig(room, host, { colors: 3 });
+    const { member: late } = rooms.join(room.code, { name: '늦게온사람' });
+    rooms.connect(room, late);
+    expect(rooms.view(room, host).lobby.paused!.blocked).toMatch(/그대로 있어야/);
+    expect(() => rooms.resume(room, host)).toThrow(RoomError);
+    rooms.setRole(room, late, 'spectator');
+    expect(rooms.view(room, host).lobby.paused!.blocked).toBeNull();
+    rooms.start(room, host);
+    expect(room.paused).toBeNull();
+    expect(room.match!.round).toBe(0);
+  });
 });

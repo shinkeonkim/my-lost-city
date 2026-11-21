@@ -10,6 +10,9 @@ import {
   MoveError,
   applyMove,
   autoMove,
+  continueMatch,
+  matchTotals,
+  PausedInfo,
   deckSize,
   expectedTurns,
   newMatch,
@@ -53,6 +56,8 @@ export interface Room {
   config: GameConfig;
   members: Member[];
   match: MatchState | null;
+  /** 방장이 중지한 매치와 그때의 좌석(멤버 id) — 로비에서 설정을 바꾼 뒤 이어서 할 수 있다 */
+  paused: { match: MatchState; seatIds: string[] } | null;
   turnDeadline: number | null;
   timer: NodeJS.Timeout | null;
   lastActive: number;
@@ -109,6 +114,7 @@ export class Rooms {
       config: { ...CLASSIC },
       members: [member],
       match: null,
+      paused: null,
       turnDeadline: null,
       timer: null,
       lastActive: Date.now(),
@@ -223,6 +229,7 @@ export class Rooms {
     room.members.forEach((m) => (m.seat = null));
     players.forEach((m, i) => (m.seat = i));
     room.match = newMatch(room.config, players.length, rng);
+    room.paused = null; // 새 게임을 시작하면 중지했던 게임은 버린다
     this.resetTimer(room);
     this.touch(room);
   }
@@ -242,6 +249,81 @@ export class Rooms {
     }
     if (match.state.turn !== before || match.round !== beforeRound || match.status !== 'playing') this.resetTimer(room);
     this.touch(room);
+  }
+
+  /** 방장이 진행 중인 게임을 중지 → 모두 로비로. 로비에서 설정을 바꾼 뒤 resume으로 이어간다 */
+  stop(room: Room, by: Member) {
+    this.requireHost(room, by);
+    const match = room.match;
+    if (!match || match.status === 'match-over') throw new RoomError('진행 중인 게임이 없습니다');
+    const seatIds: string[] = [];
+    for (const m of room.members) if (m.seat !== null) seatIds[m.seat] = m.id;
+    room.paused = { match, seatIds };
+    room.match = null;
+    room.members.forEach((m) => {
+      m.seat = null;
+      m.backInLobby = false;
+    });
+    this.clearTimer(room);
+    this.touch(room);
+  }
+
+  /** 중지했던 게임 이어서 하기: 설정이 같으면 하던 판 그대로, 바뀌었으면 끝난 판 점수를 이어 새 판 */
+  resume(room: Room, by: Member) {
+    this.requireHost(room, by);
+    if (room.match) throw new RoomError('이미 게임 중입니다');
+    const blocked = this.resumeBlocked(room);
+    if (blocked) throw new RoomError(blocked);
+    const { match, seatIds } = room.paused!;
+    if (sameConfig(match.config, room.config)) {
+      room.match = match;
+    } else {
+      try {
+        room.match = continueMatch(match, room.config, rng);
+      } catch (e) {
+        if (e instanceof MoveError) throw new RoomError(e.message);
+        throw e;
+      }
+    }
+    room.members.forEach((m) => {
+      m.seat = seatIds.indexOf(m.id) >= 0 ? seatIds.indexOf(m.id) : null;
+      m.backInLobby = false;
+    });
+    room.paused = null;
+    this.resetTimer(room);
+    this.touch(room);
+  }
+
+  private resumeBlocked(room: Room): string | null {
+    const p = room.paused;
+    if (!p) return '중지한 게임이 없습니다';
+    const players = room.members.filter((m) => m.role === 'player');
+    const missing = p.seatIds.filter((id) => !players.some((m) => m.id === id));
+    const extra = players.filter((m) => !p.seatIds.includes(m.id));
+    if (missing.length || extra.length) {
+      const names = p.seatIds.map((id) => room.members.find((m) => m.id === id)?.name ?? '나간 사람');
+      return `중지할 때의 플레이어(${names.join(', ')})가 그대로 있어야 이어갈 수 있어요`;
+    }
+    if (sameConfig(p.match.config, room.config)) return null;
+    const errors = validateConfig(room.config, p.seatIds.length);
+    if (errors.length) return errors[0];
+    const done = p.match.roundScores.length;
+    if (done >= room.config.rounds) return `이미 ${done}판을 마쳤어요. 판 수를 ${done + 1} 이상으로 늘려야 이어갈 수 있어요`;
+    return null;
+  }
+
+  private pausedInfo(room: Room): PausedInfo | null {
+    const p = room.paused;
+    if (!p) return null;
+    const totals = matchTotals(p.match);
+    return {
+      round: p.match.round + 1,
+      rounds: p.match.config.rounds,
+      roundOver: p.match.status === 'round-over',
+      players: p.seatIds.map((id, i) => ({ name: room.members.find((m) => m.id === id)?.name ?? '나간 사람', total: totals[i] })),
+      sameConfig: sameConfig(p.match.config, room.config),
+      blocked: this.resumeBlocked(room),
+    };
   }
 
   /** 다음 판 시작 또는 (매치 종료 후) 로비로 */
@@ -410,6 +492,7 @@ export class Rooms {
         deckSize: deckSize(room.config),
         expectedTurns: Math.round(expectedTurns(room.config, Math.max(players.length, 2)) * 10) / 10,
         inResults: room.members.filter((m) => m.role === 'player' && m.connections > 0 && inResults(room, m)).map((m) => m.name),
+        paused: this.pausedInfo(room),
         errors: validateConfig(room.config, Math.max(players.length, 2)).concat(players.length < 2 ? ['플레이어가 2명 이상 필요합니다'] : []),
       },
       // 매치가 끝난 뒤 로비로 돌아온 사람에게는 게임 대신 대기 로비를 보여준다
@@ -419,6 +502,10 @@ export class Rooms {
       nudgeInMs: this.nudgeInMs(room),
     };
   }
+}
+
+function sameConfig(a: GameConfig, b: GameConfig): boolean {
+  return (Object.keys(b) as (keyof GameConfig)[]).every((k) => a[k] === b[k]);
 }
 
 function makeMember(name: string, role: Member['role']): Member {

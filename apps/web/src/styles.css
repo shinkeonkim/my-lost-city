@@ -1290,6 +1290,8 @@ button.card:focus-visible {
 }
 .topbar .right {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
   gap: 6px;
   align-items: center;
   justify-content: flex-end;
@@ -1298,6 +1300,9 @@ button.card:focus-visible {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
+}
+.topbar .btn {
+  white-space: nowrap;
 }
 .confirm-close {
   display: inline-flex;
@@ -1580,4 +1585,11 @@ button.card:focus-visible {
 }
 .name-cell .emote-bubble::after {
   display: none;
+}
+.paused-notice {
+  display: grid;
+  gap: 4px;
+}
+.paused-score {
+  white-space: nowrap;
 }

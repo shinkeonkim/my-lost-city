@@ -238,6 +238,25 @@ export function scorePlayer(c: GameConfig, columns: Card[][]) {
   return { columns: cols, total: cols.reduce((a, x) => a + x.total, 0) };
 }
 
+/**
+ * 중지했던 매치를 바뀐 설정으로 이어간다.
+ * 끝난 판 점수는 그대로 두고, 진행 중이던 판은 버린 뒤 새 설정으로 다음 판을 시작한다 (첫 차례는 무작위).
+ */
+export function continueMatch(prev: MatchState, config: GameConfig, rng: Rng): MatchState {
+  const done = prev.roundScores.length;
+  if (done >= config.rounds) throw new MoveError(`이미 ${done}판을 마쳤어요. 판 수를 ${done + 1} 이상으로 늘려야 이어갈 수 있어요`);
+  const starter = Math.floor(rng() * prev.players);
+  return {
+    config,
+    players: prev.players,
+    round: done,
+    roundScores: prev.roundScores.map((r) => [...r]),
+    roundStarter: starter,
+    state: newRound(config, prev.players, starter, rng),
+    status: 'playing',
+  };
+}
+
 export function matchTotals(m: MatchState): number[] {
   const totals = Array(m.players).fill(0);
   for (const r of m.roundScores) r.forEach((v, i) => (totals[i] += v));

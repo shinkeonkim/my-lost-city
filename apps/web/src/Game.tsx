@@ -3,7 +3,7 @@ import { Card, EmoteEvent, GameView, LogEntry, RoomView, canPlayOnExpedition, pl
 import { Glyph, SUITS, cardLabel, suitVars } from './theme';
 import { CardBack, CardFace } from './cards';
 import { hasOrigin, setOrigin } from './flip';
-import { CloseRoomButton } from './Lobby';
+import { CloseRoomButton, StopGameButton } from './Lobby';
 import { EmoteBubble, EmoteButton, EmoteFeed } from './emotes';
 import { sound } from './sound';
 
@@ -290,6 +290,7 @@ export function Game({
           <button className="btn ghost tiny" aria-label={muted ? '소리 켜기' : '소리 끄기'} onClick={() => sound.setMuted(!muted)}>
             {muted ? '🔕' : '🔔'}
           </button>
+          {view.hostId === view.you && g.status !== 'match-over' && <StopGameButton act={act} small />}
           {view.hostId === view.you && <CloseRoomButton act={act} small />}
           <button className="btn ghost tiny" onClick={() => setShowLog((v) => !v)}>
             기록

@@ -29,6 +29,8 @@ export interface RoomView {
     errors: string[];
     /** 아직 결과 화면에 있는 플레이어 이름 (방장이 기다리지 않고 시작 가능) */
     inResults: string[];
+    /** 방장이 중지한 게임 — 이어서 하기 가능 */
+    paused: PausedInfo | null;
   };
   game: GameView | null;
   /** seat → 이름 */
@@ -40,6 +42,20 @@ export interface RoomView {
 }
 
 /** 방 안에서 보낼 수 있는 감정 표현 (서버는 이 목록의 id만 허용) */
+export interface PausedInfo {
+  /** 중지 당시 판 (1부터) / 전체 판 수 */
+  round: number;
+  rounds: number;
+  /** 그 판이 이미 끝난 상태였는지 */
+  roundOver: boolean;
+  /** 자리 순서대로 이름과 끝난 판까지의 누적 점수 */
+  players: { name: string; total: number }[];
+  /** 설정이 중지 당시와 같은지 — 같으면 하던 판 그대로, 다르면 끝난 판 점수만 이어 새 판 */
+  sameConfig: boolean;
+  /** 이어갈 수 없는 이유 (없으면 null) */
+  blocked: string | null;
+}
+
 export const EMOTES = [
   { id: 'thumbs', text: '👍' },
   { id: 'clap', text: '👏' },

@@ -200,6 +200,8 @@ io.on('connection', (socket) => {
   act<{ id: string }>('kick', (r, m, p) => rooms.kick(r, m, String(p.id)));
   act<{ force?: boolean }>('start', (r, m, p) => rooms.start(r, m, p.force === true));
   act('back', (r, m) => rooms.back(r, m));
+  act('stop', (r, m) => rooms.stop(r, m));
+  act('resume', (r, m) => rooms.resume(r, m));
   act('close', (r, m) => rooms.close(r, m));
   act<{ move: any }>('move', (r, m, p) => rooms.move(r, m, p.move));
   act<{ round?: number; status?: string }>('next', (r, m, p) =>
