@@ -15,4 +15,4 @@ labels:
 images:
 - name: ghcr.io/shinkeonkim/my-lost-city
   newName: ghcr.io/shinkeonkim/my-lost-city
-  newTag: sha-ddc8ac4
+  newTag: sha-8c3b825
