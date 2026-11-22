@@ -1,5 +1,8 @@
 # Expedition Lines
 
+> **보관됨** — 이 저장소는 더 이상 갱신하지 않습니다. 게임은 [shinkeonkim/boardgame](https://github.com/shinkeonkim/boardgame)의 `games/expedition-lines`로 옮겨졌고, 지금은 https://boardgame.shinkeonkim.com/games/expedition-lines 에서 플레이할 수 있어요.
+
+
 탐험대(색별 열)를 쌓아 점수를 모으는 2~4인 온라인 카드 게임. 각자 휴대폰/PC로 QR·링크를 열어 바로 참가한다.
 규칙 메커니즘은 고전 2인 카드 게임(조사: `docs/01-원작-룰-조사.md`)을 바탕으로 하되, 이름·일러스트·외형은 자체 제작이다.
 

@@ -176,25 +176,43 @@ class Bot {
   }
 }
 
-/** CDP screencast 녹화기: 바뀐 프레임만 오므로 타임스탬프로 길이를 복원한다 */
+/**
+ * 녹화기: 2배 픽셀 스크린샷을 쉬지 않고 찍고(약 15fps), 찍은 시각으로 길이를 복원한다.
+ * (CDP screencast는 기기 배율을 무시하고 CSS 픽셀 크기로만 보내 글자가 흐려져서 쓰지 않는다)
+ */
 async function recorder(page, name, { width, height }) {
   const dir = join(tmpdir(), `el-media-${name}-${process.pid}`);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const cdp = await page.context().newCDPSession(page);
+  const vp = page.viewportSize();
+  const scale = width / vp.width;
   const frames = [];
-  cdp.on('Page.screencastFrame', async ({ data, metadata, sessionId }) => {
-    const file = join(dir, `${String(frames.length).padStart(5, '0')}.jpg`);
-    writeFileSync(file, Buffer.from(data, 'base64'));
-    frames.push({ file, t: metadata.timestamp });
-    cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
-  });
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1 });
+  let running = true;
+  const loop = (async () => {
+    while (running && !page.isClosed()) {
+      const t = Date.now() / 1000;
+      try {
+        const { data } = await cdp.send('Page.captureScreenshot', {
+          format: 'jpeg',
+          quality: 92,
+          optimizeForSpeed: true,
+          clip: { x: 0, y: 0, width: vp.width, height: vp.height, scale },
+        });
+        const file = join(dir, `${String(frames.length).padStart(5, '0')}.jpg`);
+        writeFileSync(file, Buffer.from(data, 'base64'));
+        frames.push({ file, t });
+      } catch {
+        await sleep(30); // 페이지 이동 중
+      }
+    }
+  })();
   const started = Date.now() / 1000;
   return {
     async stop() {
       const end = Date.now() / 1000;
-      await cdp.send('Page.stopScreencast');
+      running = false;
+      await loop;
       await cdp.detach();
       if (!frames.length) throw new Error(`no frames for ${name}`);
       // ffconcat: 각 프레임을 다음 프레임 시각까지 유지
@@ -223,8 +241,8 @@ async function recorder(page, name, { width, height }) {
 
 /** 전체 클립을 이어 붙인 소개 영상 + 표지 이미지 */
 async function reel() {
-  const order = ['lobby', 'play', 'discard', 'results', 'mobile'];
-  const W = 1920, H = 1410, BG = '0xf3ece1', fade = 0.25;
+  const order = ['intro', 'lobby', 'play', 'discard', 'results', 'mobile'];
+  const W = 1920, H = 1200, BG = '0xf3ece1', fade = 0.25;
   const parts = [];
   for (const [i, n] of order.entries()) {
     const d = Number(
@@ -250,9 +268,10 @@ async function reel() {
   await run('ffmpeg', ['-y', '-loglevel', 'error', '-ss', '3.5', '-i', join(OUT, 'clips', 'discard.mp4'), '-frames:v', '1', '-vf', 'scale=1280:-1', join(OUT, 'cover.png')]);
 }
 
-async function gif(name, width, fps = 12) {
-  const filters = `fps=${fps},scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
-  await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', join(OUT, 'clips', `${name}.mp4`), '-lavfi', filters, '-loop', '0', join(OUT, 'gif', `${name}.gif`)]);
+async function gif(name, width, fps = 15, skip = 0) {
+  // 글자가 뭉개지지 않게: 256색 팔레트 + sierra 디더 (예전: 128색·bayer·12fps·720px)
+  const filters = `fps=${fps},scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`;
+  await run('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(skip), '-i', join(OUT, 'clips', `${name}.mp4`), '-lavfi', filters, '-loop', '0', join(OUT, 'gif', `${name}.gif`)]);
 }
 
 /** 헤드리스에는 마우스 커서가 안 보이므로 가짜 커서와 탭 표시를 그린다 */
@@ -349,18 +368,33 @@ async function fastForward(me, bots, until, playRate = 0.85) {
 
 async function desktopFlow(browser, only) {
   const want = (n) => !only.length || only.includes(n);
-  if (!['lobby', 'play', 'discard', 'results'].some(want)) return;
-  const size = { width: 1280, height: 940 };
-  const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: 1.5, locale: 'ko-KR' });
+  if (!['intro', 'lobby', 'play', 'discard', 'results'].some(want)) return;
+  const size = { width: 1280, height: 800 };
+  const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: 2, locale: 'ko-KR' });
   await ctx.addInitScript(CURSOR_SCRIPT);
   const page = await ctx.newPage();
-  const shot = { width: size.width * 1.5, height: size.height * 1.5 };
+  const shot = { width: size.width * 2, height: size.height * 2 };
   const bots = [new Bot('도윤'), new Bot('서연')];
 
-  // 1) 로비: 방 만들기 → QR → 친구 입장 → 규칙 프리셋
+  // 0) 첫 화면: 시연 애니메이션 → 게임 방법 모달 훑기
   await page.goto(BASE);
   await page.mouse.move(640, 300);
   await sleep(400);
+  if (want('intro')) {
+    const intro = await recorder(page, 'intro', shot);
+    await sleep(3200);
+    await clickAt(page, 'button:has-text("게임 방법 자세히 보기")');
+    await sleep(1400);
+    for (const id of ['parts', 'turn', 'column', 'score']) {
+      await clickAt(page, `.g-nav .chip:nth-child(${['goal', 'parts', 'turn', 'column', 'discard', 'score'].indexOf(id) + 1})`, 150);
+      await sleep(1900);
+    }
+    await page.keyboard.press('Escape');
+    await sleep(900);
+    await intro.stop();
+  }
+
+  // 1) 로비: 방 만들기 → QR → 친구 입장 → 규칙 프리셋
   let rec = want('lobby') ? await recorder(page, 'lobby', shot) : null;
   await sleep(700);
   await clickAt(page, 'input[placeholder="예: 민지"]');
@@ -550,13 +584,22 @@ try {
 }
 
 console.log('GIF 변환…');
-const gifs = { lobby: 720, play: 720, discard: 720, results: 720, mobile: 300 };
+// [너비, fps, 앞에서 건너뛸 초] — README에서 GitHub가 그려 주도록 파일마다 약 8MB 이하로
+const gifs = { intro: [960, 12], lobby: [960, 15], play: [780, 10, 1.5], discard: [960, 12], results: [820, 10, 3], mobile: [390, 12] };
 await Promise.all(
   Object.entries(gifs)
     .filter(([n]) => (!only.length || only.includes(n)) && existsSync(join(OUT, 'clips', `${n}.mp4`)))
-    .map(([n, w]) => gif(n, w)),
+    .map(([n, [w, fps, skip = 0]]) => gif(n, w, fps, skip)),
 );
 if (!only.length) await reel();
+// 게임 방법 모달(apps/web/public/guide)에 쓰는 가벼운 영상
+const GUIDE = join(ROOT, 'apps/web/public/guide');
+mkdirSync(GUIDE, { recursive: true });
+for (const n of ['lobby', 'play', 'discard', 'results']) {
+  const src = join(OUT, 'clips', `${n}.mp4`);
+  if (!existsSync(src) || (only.length && !only.includes(n))) continue;
+  await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', src, '-vf', 'scale=960:-2:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', join(GUIDE, `${n}.mp4`)]);
+}
 writeFileSync(join(OUT, 'README.txt'), '`npm run build && npm run media`로 생성됩니다. 손으로 편집하지 마세요.\n');
 console.log('done');
 process.exit(0);
